@@ -1,5 +1,6 @@
 <title>공유압 회로 시뮬레이터</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="author" content="한국폴리텍대학 진주캠퍼스 자동화과 장성욱">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <style>
@@ -172,6 +173,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
 .chips button{width:36px;height:34px}
 .refbox summary{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .reflad{max-height:330px;overflow:auto;margin-top:6px}
+.brand .maker{font-size:12.5px;color:var(--ink);opacity:.75}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 
@@ -180,6 +182,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
     <div class="brand">
       <h1>공유압 회로 시뮬레이터</h1>
       <span class="sub">설비보전기사 실기 공개문제 16개 · 회로 구성부터 유지보수까지</span>
+      <span class="sub maker">제작: 한국폴리텍대학 진주캠퍼스 자동화과 장성욱</span>
     </div>
     <div class="clock" title="실기 과제 1시간 모의 타이머">
       <span class="t" id="clk">60:00</span>
@@ -315,7 +318,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
     <summary><h2>문제지 요약 · 유지보수 계획</h2><span class="sub" id="sheetSub"></span></summary>
     <div class="sheet" id="sheet"></div>
   </details>
-  <p class="small">정정 예시와 유지보수 회로는 이 시뮬레이터에서 2회 연속 정상 동작을 확인한 하나의 답이며, 공식 정답과 다를 수 있습니다.</p>
+  <p class="small"><b>제작자</b> 한국폴리텍대학 진주캠퍼스 자동화과 장성욱 · 정정 예시와 유지보수 회로는 이 시뮬레이터에서 2회 연속 정상 동작을 확인한 하나의 답이며, 공식 정답과 다를 수 있습니다.</p>
 </div>
 <div class="pop" id="pop" hidden></div>
 
