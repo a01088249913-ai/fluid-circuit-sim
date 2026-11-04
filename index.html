@@ -1026,7 +1026,7 @@ function drawMachine(){
   p.act.forEach((a,i)=>{
     const y=24+i*118, col=i===0?"var(--plus)":"var(--minus)";
     svg.push(`<text x="8" y="${y+6}" font-size="13" font-weight="600" fill="var(--ink)">${a.id}</text>`);
-    const pl=m.plumb[a.id]; if(m.short) svg.push(`<text x="300" y="14" font-size="12" font-weight="600" fill="var(--bad)">⚠ 전원 단락 — 배선 확인</text>`); if(pl) svg.push(`<text x="8" y="${y+22}" font-size="10" fill="var(--bad)">${pl==="rev"?"역결선":"미연결"}</text>`);
+    const pl=m.plumb[a.id]; if(m.short) svg.push(`<text x="300" y="14" font-size="12" font-weight="600" fill="var(--bad)">⚠ 전원 단락 — 배선 확인</text>`); if(pl&&pl!=="ok") svg.push(`<text x="8" y="${y+22}" font-size="10" fill="var(--bad)">${pl==="rev"?"역결선":"미연결"}</text>`);
     if(a.kind==="cyl"){
       const x=40, L=230, pos=m.pos[a.id], px=x+6+pos*(L-22), tip=px+10+L-10;
       svg.push(`<rect x="${x}" y="${y}" width="${L}" height="34" rx="4" fill="var(--panel)" stroke="var(--steel)" stroke-width="2"/>`);
@@ -1953,6 +1953,7 @@ window.BUILD={
     const t=store.get("btab","hose"); document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire";
     wSig=""; hSig=""; if(t==="wire") requestAnimationFrame(wireTick); else requestAnimationFrame(hoseTick);
   },
+  hoseList(){ return hoses; }, setHoses(h){ hoses=h; saveHose(); APP.resetMachine(); renderBoard(); },
   compile, makeNetEval, buildUnits, get wires(){return wires}, set wires(v){wires=v;netCache=null;}
 };
 })();
