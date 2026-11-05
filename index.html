@@ -49,7 +49,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--minus);outline
 .btn{border:1px solid var(--line);background:var(--card);border-radius:7px;padding:6px 11px;font-weight:500}
 .btn.primary{background:var(--ink);color:var(--card);border-color:var(--ink)}
 .btn.small{padding:3px 8px;font-size:12px}
-.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}
+.grid{display:grid;grid-template-columns:minmax(260px,3fr) minmax(0,9fr);gap:14px;align-items:start}
+#leftCol .ctrl{flex-wrap:wrap;gap:8px}#leftCol .card-h h2{font-size:15px}
 @media (max-width:1000px){.grid{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -1284,7 +1285,9 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   const W=X+20;
   out.unshift(`<line x1="40" y1="${TOP-14}" x2="${W-10}" y2="${TOP-14}" stroke="var(--plus)" stroke-width="2.6"/><line x1="40" y1="${yBot}" x2="${W-10}" y2="${yBot}" stroke="var(--minus)" stroke-width="2.6"/>`);
   out.unshift(`<text x="6" y="${TOP-10}" font-size="12" font-weight="600" fill="var(--plus)">24V</text><text x="10" y="${yBot+4}" font-size="12" font-weight="600" fill="var(--minus)">0V</text>`);
-  const svg=$(tid||"ladder"); svg.setAttribute("width",W); svg.setAttribute("height",yBot+14); svg.setAttribute("viewBox",`0 0 ${W} ${yBot+14}`);
+  const svg=$(tid||"ladder"); let sc=1;
+  if(!tid){ const cw=(svg.parentElement&&svg.parentElement.clientWidth||0)-4; if(cw>W) sc=Math.min(1.7,cw/W); }
+  svg.setAttribute("width",Math.round(W*sc)); svg.setAttribute("height",Math.round((yBot+14)*sc)); svg.setAttribute("viewBox",`0 0 ${W} ${yBot+14}`);
   svg.innerHTML=out.join("");
 }
 
@@ -1493,6 +1496,7 @@ window.APP.resetMachine=()=>{ const o=window.BUILD&&mode==="build"?window.BUILD.
 
 // ---------- loop ----------
 let last=performance.now(), acc=0, sampleT=0, lastSig="";
+window.addEventListener("resize",()=>{ ladVer++; });
 function renderAll(){ drawMachine(); drawLadder(); drawTrace(); updateEditCount(); }
 function loop(now){
   const dt=Math.min(100,now-last); last=now;
