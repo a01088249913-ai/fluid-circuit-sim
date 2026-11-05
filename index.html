@@ -253,6 +253,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
             <li>비상정지 유닛: 13-14 a접점, 11-12 b접점 · 램프 H1 = L1</li>
             <li>릴레이: A1(+) A2(−), 접점 11 COM · 12 NC · 14 NO (21~44 같은 규칙)</li>
             <li>각 유닛 위 빨간 단자줄 = + 공통, 아래 파란 단자줄 = − 공통</li>
+            <li>솔레노이드(밸브 코일 +/−)와 센서·리밋스위치 단자는 사진 아래 <b>배관 회로도</b>의 각 부품에 있습니다 — 근접센서 갈(+)·청(−)·흑(출력), 리밋스위치 C·NO·NC</li>
             <li>사진에 원래 꽂혀 있는 선은 배경일 뿐 연결이 아닙니다</li>
           </ul>
         </details>
@@ -327,6 +328,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
 (function (root) {
   "use strict";
   const DT = 10; // ms per tick
+  const SOL_DELAY = 5; // solenoid valve response: 50 ms of continuous energizing to shift (relay contact delay = 1 tick)
 
   // ---------- parser ----------
   // expr := seq ('|' seq)* ; seq := atom+ ; atom := '(' expr ')' | ['/']LABEL
@@ -425,7 +427,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
   // motor: {id, kind:'motor', valve:{type:'single', y} } -> CW ; or {type:'run_dir', run, dir} (dir on = CCW); or {type:'center', plus(CW), minus(CCW)}
   function Machine(problem, ladder, opts) {
     opts = opts || {};
-    this.p = problem;
+    this.p = opts.sensors ? Object.assign({}, problem, { sensors: opts.sensors }) : problem;
     this.L = ladder;
     this.stroke = opts.stroke || 1200; // ms per full stroke
     this.plumb = opts.plumb || {};
@@ -501,7 +503,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
     const eff = {};
     for (const k in coil) if (k[0] === "Y") {
       this.solCnt[k] = coil[k] ? (this.solCnt[k] || 0) + 1 : 0;
-      eff[k] = this.solCnt[k] >= 2;
+      eff[k] = this.solCnt[k] >= SOL_DELAY;
     }
     this.sol = coil; this.solEff = eff;
     // actuators
@@ -706,13 +708,13 @@ details.sheetbox[open] summary{margin-bottom:10px}
   PN.push({ no: 1, act: [cyl("A", single("Y1")), cyl("B", dbl("Y2", "Y3"))], sensors: PSENS,
     seq: [["A+"], ["B+"], ["A-"], ["B-"]],
     rungs: ["(PB1 K5 | K1) /K4 = K1", "(S2 | K2) K1 = K2", "(LS2 | K3) K2 = K3", "(S1 | K4 /K5) K3 = K4", "LS1 = K5", "K1 /K5 = Y1", "K2 = Y2", "K4 = Y3"],
-    fix: ["(PB1 K5 | K1) /K4 = K1", "(S2 | K2) K1 = K2", "(LS2 | K3) K2 = K3", "(S1 | K4 /K5) K3 = K4", "LS1 = K5", "K1 /K3 = Y1", "K2 = Y2", "K4 = Y3"],
+    fix: ["(PB1 K5 | K1) /K4 = K1", "(S2 | K2) K1 = K2", "(LS2 | K3) K2 = K3", "S1 K3 | K4 /K5 = K4", "LS1 = K5", "K1 /K3 = Y1", "K2 = Y2", "K4 = Y3"],
     maint: ["연속 스위치(PB2), 카운터 리셋 스위치(PB3) 추가: PB2 → 기본동작 3회 연속 후 정지 / PB3 → 카운터 리셋 / 리셋 후 PB2 → 재동작", "실린더 A 전진 완료 3초 후 실린더 B 동작 (전기타이머)", "실린더 B 후진속도 조절: 일방향 유량조절밸브, 미터아웃"],
     mkind: ["counter", "timer", "meterout"] });
   PN.push({ no: 2, act: [cyl("A", dbl("Y1", "Y2")), cyl("B", single("Y3"))], sensors: PSENS,
     seq: [["A+"], ["B+"], ["B-"], ["A-"]],
     rungs: ["(PB1 S1 | K1) /K4 = K1", "(S2 K1 | K2) /K3 = K2", "(LS2 K2 | K3) /K4 = K3", "(LS1 K3 | K4) /K1 = K4", "K1 = Y1", "K2 = Y3", "K4 = Y2"],
-    fix: ["(PB1 S1 | K1) /K4 = K1", "(S2 K1 | K2) /K3 = K2", "(LS2 K2 | K3) /K4 = K3", "(LS1 K3 | K4) K1 = K4", "K1 = Y1", "K2 = Y3", "K4 = Y2"],
+    fix: ["(PB1 S1 | K1) /K3 = K1", "(S2 K1 | K2) /K3 = K2", "(LS2 K2 | K3) /K4 = K3", "(LS1 K3 | K4) /K1 = K4", "K1 = Y1", "K2 = Y3", "K4 = Y2"],
     maint: ["연속 스위치(PB2), 카운터 리셋 스위치(PB3) 추가: PB2 → 기본동작 3회 연속 후 정지 / PB3 → 카운터 리셋 / 리셋 후 PB2 → 재동작", "실린더 B 방향제어밸브를 양측 솔레노이드 밸브로 교체", "감압밸브로 실린더 B 작동압력 0.3±0.05 MPa"],
     mkind: ["counter", "dblB", "reducing"] });
   PN.push({ no: 3, act: [cyl("A", dbl("Y1", "Y2")), cyl("B", dbl("Y3", "Y4"))], sensors: PSENS,
@@ -810,8 +812,8 @@ details.sheetbox[open] summary{margin-bottom:10px}
 // ===== 유지보수 모범 회로 (시뮬레이터 검증용 예시) =====
 (function (root) {
   const M = {
-    P1: { rungs: ["((PB1 | K6) K5 | K1) /K4 = K1", "(S2 | K2) K1 = K2", "(LS2 | K3) K2 = K3", "(S1 | K4 /K5) K3 = K4", "LS1 = K5", "(PB2 | K6) /C1 = K6", "K4 = C1", "PB3 = CR1", "K2 = T1", "K1 /K3 = Y1", "T1 = Y2", "K4 = Y3"] },
-    P2: { rungs: ["((PB1 | K5) S1 | K1) /K4 = K1", "(S2 K1 | K2) /K3 = K2", "(LS2 K2 | K3) /K4 = K3", "(LS1 K3 | K4) K1 = K4", "(PB2 | K5) /C1 = K5", "K4 = C1", "PB3 = CR1", "K1 = Y1", "K2 = Y3", "K3 = Y4", "K4 = Y2"], act: { B: { type: "double", plus: "Y3", minus: "Y4" } } },
+    P1: { rungs: ["((PB1 | K6) K5 | K1) /K4 = K1", "(S2 | K2) K1 = K2", "(LS2 | K3) K2 = K3", "S1 K3 | K4 /K5 = K4", "LS1 = K5", "(PB2 | K6) /C1 = K6", "K4 = C1", "PB3 = CR1", "K2 = T1", "K1 /K3 = Y1", "T1 = Y2", "K4 = Y3"] },
+    P2: { rungs: ["((PB1 | K5) S1 | K1) /K3 = K1", "(S2 K1 | K2) /K3 = K2", "(LS2 K2 | K3) /K4 = K3", "(LS1 K3 | K4) /K1 = K4", "(PB2 | K5) /C1 = K5", "K4 = C1", "PB3 = CR1", "K1 = Y1", "K2 = Y3", "K3 = Y4", "K4 = Y2"], act: { B: { type: "double", plus: "Y3", minus: "Y4" } } },
     P3: { rungs: ["((PB1 | K4) S1 | K1) /LS2 /ES = K1", ["K1", ["S2", "K2"], ["", "Y1"], ["K2", "T1"], ["T1", "Y3"]], ["/K1", ["LS1", "K3"], ["K3 | ES", "Y2"], ["", "Y4"]], "(PB2 | K4) /ES = K4", "ES = H1"] },
     P4: { rungs: ["(PB1 | K6 | K1) /K5 = K1", "(K1 S1 | K2) /K5 = K2", "(S2 | K3) K2 = K3", "(LS2 | K4) K3 = K4", "(LS1 | K5) K4 = K5", "K3 = T1", "(PB2 | K6) /C1 = K6", "K4 = C1", "PB3 = CR1", "K2 /K5 = Y1", "T1 /K4 = Y2"] },
     P5: { rungs: ["((PB1 | K5) S1 | K1 /K4) /ES = K1", "(S2 K1 | K2) /K3 /ES = K2", "(LS2 K2 | K3) /K4 /ES = K3", "(LS1 K3 /K2 | K4 /K1) /ES = K4", "(PB2 | K5) /ES = K5", "ES = H1", "K1 = Y1", "K2 = Y2", "K3 | ES = Y3", "K4 | ES = Y4"], act: { A: { type: "double", plus: "Y1", minus: "Y4" } } },
@@ -881,7 +883,7 @@ let kind=store.get("kind","P"), no=store.get("no",1), mode=store.get("mode","bas
 let prob, baseL, fixL, curL, machine, showAns=false, simProb, ladVer=0;
 const ladAll=store.get("lad2",{});
 const probKey=()=>kind+no;
-window.APP={get prob(){return prob},get simProb(){return simProb},get curL(){return curL},get machine(){return machine},get fixL(){return fixL},get mode(){return mode},probKey,store,clone,setPlumb(pl,sp){ if(mode==="build"){ machine.plumb=pl||{}; machine.speed=sp||{}; } }};
+window.APP={get prob(){return prob},get simProb(){return simProb},get curL(){return curL},get machine(){return machine},get fixL(){return fixL},get mode(){return mode},probKey,store,clone,setPlumb(pl,sp,sens){ if(mode==="build"){ machine.plumb=pl||{}; machine.speed=sp||{}; if(sens){ machine.p=Object.assign({},simProb,{sensors:sens}); machine.computeSensors(); } } }};
 
 function remapIds(base, fix){
   // give fix contacts the ids of matching base contacts in the same rung
@@ -916,7 +918,7 @@ function renderChips(){
   document.querySelectorAll("#kindSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===kind));
   document.querySelectorAll("#modeSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===mode));
   document.body.classList.remove("mode-build","mode-base","mode-maint"); document.body.classList.add("mode-"+mode);
-  const G={build:["왼쪽 목록에서 부품을 올리고, 포트 → 포트를 눌러 호스 연결","「전기 배선」 탭에서 사진 속 단자끼리 전선 연결","아래 장치의 PB1으로 실제로 움직여 보기"],
+  const G={build:["부품·센서를 배치하고 포트끼리 호스 연결","「전기 배선」 탭에서 사진 속 유닛 ↔ 배관판의 솔레노이드·센서 단자 연결","PB1으로 내가 만든 그대로 움직여 보기"],
     base:["전기회로도에서 틀린 접점을 눌러 고치기","PB1을 눌러 변위단계선도대로 움직이는지 보기","「채점하기」로 2회 연속 동작 확인"],
     maint:["아래 「유지보수 계획」 읽기","PB2·PB3·비상정지로 바뀐 동작 확인","「유지보수 자동 점검」"]}[mode];
   $("guide").innerHTML=G.map(t=>`<li>${t}</li>`).join("");
@@ -1355,11 +1357,13 @@ const T={
   cbv:{n:"카운터밸런스 밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30]},grp:"압력·유량",h_only:1},
   pcheck:{n:"파일럿 체크밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30],X:[48,54]},grp:"압력·유량",h_only:1},
   qev:{n:"급속배기밸브",w:96,h:52,ports:{P:[14,26],A:[82,26]},grp:"압력·유량",p_only:1},
-  ps:{n:"압력스위치",w:80,h:60,ports:{P:[40,52]},grp:"압력·유량"},
+  ps:{n:"압력스위치",w:80,h:60,ports:{P:[40,52]},grp:"압력·유량",elec:{C:[14,9],NO:[40,9],NC:[66,9]}},
+  sensS:{n:"정전용량형 센서",w:64,h:50,ports:{},grp:"센서",p_only:1,elec:{BN:[12,44],BU:[32,44],BK:[52,44]}},
+  sensLS:{n:"리밋스위치",w:76,h:60,ports:{},grp:"센서",elec:{C:[14,9],NO:[38,9],NC:[62,9]}},
 };
 const KIND=()=>APP.prob.kind;
 const isH=()=>KIND()==="H";
-let lastSpeed={}; let vmap={}; let comps=[], hoses=[], view=store.get("hview","real"), pend=null, sel=null, drag=null, lastPlumb={}, nextId=1;
+let lastSens={}; let lastSpeed={}; let vmap={}; let comps=[], hoses=[], view=store.get("hview","real"), pend=null, sel=null, drag=null, lastPlumb={}, nextId=1;
 
 function hoseKey(){ return "hose:"+APP.probKey()+":"+store.get("btarget","base"); }
 function saveHose(){ store.set(hoseKey(),{comps,hoses}); }
@@ -1387,6 +1391,7 @@ function requiredParts(){
   const sp=APP.simProb, H=isH(), r={};
   const add=(t,n)=>r[t]=(r[t]||0)+(n||1);
   if(H){ add("pu"); add("relief"); add("gauge"); add("distP"); add("distT"); } else { add("su"); add("distP"); }
+  Object.keys(sp.sensors).forEach(s=>add(/^S\d/.test(s)?"sensS":"sensLS"));
   sp.act.forEach(a=>{ if(a.kind==="cyl"){ add("cyl"); add(reqValve(a)[0]); } else { add("motor"); const m=motorPlan(a); if(m.kind==="rundir"){ add("v22"); add("v42s"); } else { add(m.vt[0]); add("check"); } } });
   const m=mt();
   Object.entries(m).forEach(([k,ids])=>{ const n=ids.length;
@@ -1403,6 +1408,23 @@ function requiredParts(){
   return r;
 }
 const INL={fcv1:["IN","OUT"],fcv2:["IN","OUT"],qev:["P","A"],cbv:["IN","OUT"],pcheck:["IN","OUT"],prv:["IN","OUT"]};
+
+// ---------- sensors: placement decides what they detect ----------
+const isSens=(t)=>t==="sensS"||t==="sensLS";
+function sensLabels(t){ return Object.keys(APP.simProb.sensors).filter(s=>t==="sensS"?/^S\d/.test(s):/^LS/.test(s)).sort(); }
+function detectPoints(){ // candidate end points of cylinders: S-type on body, LS on rod tip
+  const pts=[]; comps.filter(c=>c.t==="cyl"&&c.role).forEach(c=>{ const w=T.cyl.w;
+    pts.push({role:c.role,end:0,kind:"S",x:c.x+24,y:c.y+34},{role:c.role,end:1,kind:"S",x:c.x+w-70,y:c.y+34},
+             {role:c.role,end:0,kind:"LS",x:c.x+w-11,y:c.y+34},{role:c.role,end:1,kind:"LS",x:c.x+w-11+110,y:c.y+34}); });
+  return pts;
+}
+function sensMap(){
+  const map={}, pts=detectPoints();
+  comps.filter(c=>isSens(c.t)&&c.lab).forEach(c=>{ if(map[c.lab]) return; const d=T[c.t]; const cx=c.x+d.w/2, cy=c.y+d.h; const kind=c.t==="sensS"?"S":"LS";
+    let best=null, bd=1e9; pts.filter(p=>p.kind===kind).forEach(p=>{ const dist=Math.hypot(p.x-cx,(p.y-cy)*0.7); if(dist<bd){ bd=dist; best=p; } });
+    if(best&&bd<75) map[c.lab]=[best.role,best.end]; c.det=best&&bd<75?best:null; });
+  return map;
+}
 
 // ---------- net analysis ----------
 function analyze(){
@@ -1536,7 +1558,10 @@ function analyze(){
     }); });
   if(H){ const open=[]; comps.forEach(c=>{ if(!used.has(c.id)||T[c.t].bus) return; Object.keys(T[c.t].ports).forEach(p=>{ if(!conn(c,p)&&!(c.t==="v42s"&&p==="B"&&APP.prob.no===1)) open.push(`${T[c.t].n} ${p}`); }); });
     if(open.length) items.push([false,"열린 포트",open.join(", ")+" — 유압이 걸리면 누유됩니다"]); }
-  return {plumb,speed,items};
+  const smap=sensMap(), want=APP.simProb.sensors, endTxt=(a,e)=>`${a} ${e?"전진 끝":"후진 끝"}`;
+  Object.keys(want).sort().forEach(s=>{ const got=smap[s], w=want[s]; const ok=got&&got[0]===w[0]&&got[1]===w[1];
+    items.push([!!ok,`센서 ${s}`,ok?`${endTxt(w[0],w[1])} 감지 위치 정상`:got?`${endTxt(got[0],got[1])}를 감지합니다 — ${endTxt(w[0],w[1])} 위치로 옮기세요`:comps.some(c=>isSens(c.t)&&c.lab===s)?`실린더 ${w[0]} ${w[1]?"전진 끝":"후진 끝"} 가까이에 놓으세요 (지금은 아무것도 감지 못함)`:`${s} 센서가 없습니다`]); });
+  return {plumb,speed,items,smap};
 }
 
 // ---------- drawing ----------
@@ -1565,6 +1590,8 @@ function partArt(t,w,h,sym,c){
     else if(t==="relief"||t==="prv"||t==="cbv"||t==="ps"){ o.push(`<rect x="${w/2-18}" y="10" width="36" height="34" ${st} fill="var(--card)"/><path d="M${w/2} 40 V16 l-3 6 h6z" stroke="var(--ink)" fill="var(--ink)"/><path d="M${w/2+18} 27 l4-4 l4 8 l4-8" ${st}/>`); }
     else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="22" ${st} fill="var(--card)"/><path d="M28 44 L48 24 l-7 1 l6 6z" stroke="var(--ink)" fill="var(--ink)"/><line x1="38" y1="56" x2="38" y2="78" stroke="var(--ink)"/>`); }
     else if(t==="distP"||t==="distT"){ o.push(`<line x1="16" y1="24" x2="${w-16}" y2="24" stroke="var(--ink)" stroke-width="2"/>`); }
+    else if(t==="sensS"){ o.push(`<path d="M32 6 L50 24 L32 42 L14 24 Z" stroke="var(--ink)" stroke-width="1.4" fill="var(--card)"/><path d="M24 24 h16 M28 18 v12 M36 18 v12" stroke="var(--ink)"/>`); }
+    else if(t==="sensLS"){ o.push(`<rect x="18" y="12" width="40" height="26" stroke="var(--ink)" stroke-width="1.4" fill="var(--card)"/><path d="M22 32 L54 18" stroke="var(--ink)"/><line x1="38" y1="38" x2="38" y2="50" stroke="var(--ink)"/><circle cx="38" cy="54" r="5" stroke="var(--ink)" fill="var(--card)"/>`); }
     else if(t==="tee"){ o.push(`<path d="M16 30 H94 M42 30 V52 M68 30 V52" stroke="var(--ink)" stroke-width="1.6" fill="none"/><circle cx="42" cy="30" r="3" fill="var(--ink)"/><circle cx="68" cy="30" r="3" fill="var(--ink)"/>`); }
     else if(t==="check"||t==="pcheck"){ o.push(`<line x1="14" y1="${h/2}" x2="${w-14}" y2="${h/2}" stroke="var(--ink)"/><circle cx="${w/2-4}" cy="${h/2}" r="7" ${st} fill="var(--card)"/><path d="M${w/2+4} ${h/2-10} L${w/2+4} ${h/2+10}" stroke="var(--ink)" stroke-width="2"/>`); if(t==="pcheck") o.push(`<line x1="48" y1="${h/2+8}" x2="48" y2="54" stroke="var(--ink)" stroke-dasharray="3 2"/>`); }
     else if(t==="fcv1"||t==="fcv2"){ o.push(`<line x1="14" y1="26" x2="82" y2="26" stroke="var(--ink)"/><path d="M38 16 q10 10 0 20 M58 16 q-10 10 0 20" ${st}/><path d="M30 40 L66 12" stroke="var(--ink)"/>`); if(t==="fcv1") o.push(`<circle cx="48" cy="44" r="4" ${st}/>`); }
@@ -1583,6 +1610,8 @@ function partArt(t,w,h,sym,c){
   else if(t==="su"){ o.push(`<rect x="2" y="2" width="${w-4}" height="${h-4}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="24" y="30" width="30" height="24" fill="${BODY}"/><path d="M28 54 h22 l-4 40 h-14z" fill="#bcd6e8" stroke="#6c8aa0"/><rect x="60" y="30" width="34" height="24" fill="${BODY}"/><circle cx="77" cy="80" r="15" fill="#f4f6f8" stroke="#555"/><line x1="77" y1="80" x2="84" y2="72" stroke="#c22"/>`); label("SERVICE UNIT",112); }
   else if(t==="relief"||t==="prv"||t==="cbv"){ o.push(`<rect x="2" y="2" width="${w-4}" height="${h-4}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="18" y="14" width="${w-36}" height="${h-44}" rx="3" fill="${BODY}"/><rect x="${w-24}" y="${h/2-22}" width="20" height="16" rx="3" fill="${MET2}"/>`); label(t==="relief"?"RELIEF":t==="prv"?"REDUCING":"COUNTER BAL.",h-24); }
   else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="28" fill="#f4f6f8" stroke="${MET2}" stroke-width="4"/><line x1="38" y1="34" x2="52" y2="20" stroke="#c22" stroke-width="2"/><rect x="32" y="60" width="12" height="12" fill="${MET}"/><text x="38" y="48" font-size="7" text-anchor="middle" fill="#555">MPa</text>`); }
+  else if(t==="sensS"){ o.push(`<rect x="22" y="2" width="20" height="34" rx="4" fill="#2b5fb8"/><rect x="18" y="30" width="28" height="10" rx="2" fill="#d6dbe0"/><circle cx="32" cy="10" r="3" fill="#ffd400"/>`); }
+  else if(t==="sensLS"){ o.push(`<rect x="8" y="14" width="60" height="26" rx="3" fill="#e8ebee" stroke="#9aa3ad"/><rect x="26" y="18" width="24" height="18" fill="#3a3f45"/><line x1="38" y1="40" x2="38" y2="52" stroke="#555" stroke-width="3"/><circle cx="38" cy="54" r="5" fill="#c9ced4" stroke="#555"/>`); }
   else if(t==="distP"||t==="distT"){ o.push(`<rect x="2" y="6" width="${w-4}" height="${h-12}" rx="4" fill="${t==="distT"?"#d8dce0":"#efe7c8"}" stroke="${PLATE2}"/>`); }
   else { o.push(`<rect x="2" y="2" width="${w-4}" height="${h-4}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="24" y="${h/2-10}" width="${w-48}" height="20" rx="3" fill="${t==="ps"?"#2a3b74":BODY}"/>`); }
   label(T[t].n,t==="cyl"?-2:h+10);
@@ -1594,6 +1623,10 @@ function solOverlay(c){
     o.push(`<rect x="${x}" y="${d.h-30}" width="28" height="16" rx="3" fill="${on?"#ffcf33":"rgba(255,255,255,.85)"}" stroke="${on?"#b8860b":"#888"}"/><text x="${x+14}" y="${d.h-18}" font-size="10" text-anchor="middle" font-weight="700" fill="#222">${y}</text>`); });
   return o.join("");
 }
+function sensOverlay(c){
+  if(!c||!isSens(c.t)) return ""; const d=T[c.t], on=c.lab&&APP.machine.sens&&APP.machine.sens[c.lab];
+  return `<rect x="${d.w/2-20}" y="-18" width="40" height="16" rx="3" fill="${on?"#ffcf33":c.det?"#fff":"#fde9dc"}" stroke="${on?"#b8860b":"#888"}"/><text x="${d.w/2}" y="-6" font-size="10.5" text-anchor="middle" font-weight="700" fill="#222">${c.lab||"?"}</text>`;
+}
 const pos=(c)=>{ if(!c||!c.role) return 0; const m=APP.machine; const a=APP.simProb.act.find(x=>x.id===c.role&&x.kind==="cyl"); return a&&m.pos?m.pos[c.role]||0:0; };
 const ang=(c)=>{ if(!c||!c.role) return 0; const m=APP.machine; return (m.angle&&m.angle[c.role])||0; };
 function compLabel(c){
@@ -1601,12 +1634,12 @@ function compLabel(c){
   return "";
 }
 function renderBoard(){
-  const res=analyze(); lastPlumb=res.plumb; lastSpeed=res.speed; APP.setPlumb(res.plumb,res.speed);
+  const res=analyze(); lastPlumb=res.plumb; lastSpeed=res.speed; lastSens=res.smap; APP.setPlumb(res.plumb,res.speed,res.smap);
   const H=isH(), o=[];
   o.push(`<defs><pattern id="gridp" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="var(--line)"/></pattern><linearGradient id="gSil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#b9c1c9"/><stop offset="1" stop-color="#e3e7eb"/></linearGradient></defs>`);
   o.push(`<rect width="1000" height="680" fill="url(#gridp)"/>`);
   comps.forEach(c=>{ const d=T[c.t];
-    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}`);
+    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}`);
     const lab=compLabel(c); if(lab) o.push(`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="var(--minus)">${lab}</text>`);
     o.push(`</g>`); });
   const pos=(k)=>{ const [id,p]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[p]; return [c.x+q[0],c.y+q[1]]; };
@@ -1620,7 +1653,8 @@ function renderBoard(){
   const sp=APP.simProb;
   $("plumbStat").innerHTML=sp.act.map(a=>{ const s=res.plumb[a.id], v=res.speed[a.id]; const sv=v&&(v.f!==1||v.b!==1)?` · 전진 ${Math.round(v.f*100)}% / 후진 ${Math.round(v.b*100)}%`:""; return `<span class="chip ${s==="ok"?"ok":"bad"}">${a.id}: ${s==="ok"?"정상 연결":s==="rev"?"반대 연결":"미연결/오류"}${sv}</span>`; }).join("")+`<span class="chip">호스 ${hoses.length}개 · 부품 ${comps.length}개</span>`;
   const sc=comps.find(c=>c.id===sel);
-  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 호스를 누르면 지워집니다.");
+  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""}${isSens(sc.t)?`<button class="btn small" id="bLab">이름: ${sc.lab||"?"} → 바꾸기</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 센서·리밋스위치는 실린더 끝 가까이에 놓으면 그 위치를 감지합니다.");
+  if(sc&&$("bLab")) $("bLab").onclick=()=>{ const L=sensLabels(sc.t); const i=L.indexOf(sc.lab); sc.lab=L[(i+1)%L.length]; saveHose(); APP.resetMachine(); renderBoard(); };
   if(sc){ const r=$("bRole"); if(r) r.onclick=()=>{ sc.role=sc.role==="A"?"B":"A"; saveHose(); renderBoard(); }; $("bDel").onclick=()=>{ hoses=hoses.filter(h=>!h.a.startsWith(sc.id+".")&&!h.b.startsWith(sc.id+".")); comps=comps.filter(c=>c.id!==sc.id); sel=null; saveHose(); renderBoard(); }; }
 }
 function renderPalette(){
@@ -1634,6 +1668,7 @@ function addComp(t,x,y,role){
   if(px===undefined){ const n=comps.length; px=20+(n*37)%600; py=280+(n*23)%200; }
   const c={id:nextId++,t,x:px,y:py};
   if(t==="cyl"||t==="motor"){ c.role=role||(comps.some(q=>(q.t==="cyl"||q.t==="motor")&&q.role==="A")?"B":"A"); }
+  if(isSens(t)){ const L=sensLabels(t); c.lab=role||L.find(l=>!comps.some(q=>q.lab===l))||L[0]; }
   comps.push(c); sel=c.id; saveHose(); renderBoard(); return c;
 }
 function svgPt(e){ const svg=$("board"); const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
@@ -1668,19 +1703,19 @@ $("bModel").onclick=()=>{
   // chain helper: from key → list of [comp, inPort, outPort] → to key
   const chain=(from,items,to)=>{ let cur=from; items.forEach(([c,a,b2])=>{ link(cur,P(c,a)); cur=P(c,b2); }); link(cur,to); };
   sp.act.forEach((a,i)=>{ const x0=30+i*480;
-    if(a.kind==="cyl"){ const c=addComp("cyl",x0,30,a.id); const v=addComp(reqValve(a)[0],x0+20,300);
+    if(a.kind==="cyl"){ const c=addComp("cyl",x0,90,a.id); const v=addComp(reqValve(a)[0],x0+20,330);
       const aT=a.valve.type==="single"&&a.valve.dir<0?"rod":"cap", bT=aT==="cap"?"rod":"cap";
       const vport={}; vport[aT]="A"; vport[bT]="B";
       const capItems=[], rodItems=[]; let xs=x0;
       const put=(t,dx,dy)=>addComp(t,x0+dx,dy);
-      if(on("meterout",a.id)) capItems.push([put("fcv1",0,170),"IN","OUT"]);
-      if(on("meterin",a.id)||on("meterin_cb",a.id)) capItems.push([put("fcv1",0,170),"OUT","IN"]);
-      if(on("qev",a.id)) capItems.push([put("qev",0,170),"P","A"]);
-      if(on("meterin_cb",a.id)){ const cb=put("cbv",190,190); const te=put("tee",170,110); const g=put("gauge",300,90); rodItems.push([cb,"OUT","IN"],[te,"1","2"]); link(P(te,"3"),P(g,"P")); }
+      if(on("meterout",a.id)) capItems.push([put("fcv1",0,230),"IN","OUT"]);
+      if(on("meterin",a.id)||on("meterin_cb",a.id)) capItems.push([put("fcv1",0,230),"OUT","IN"]);
+      if(on("qev",a.id)) capItems.push([put("qev",0,230),"P","A"]);
+      if(on("meterin_cb",a.id)){ const cb=put("cbv",190,240); const te=put("tee",170,165); const g=put("gauge",300,150); rodItems.push([cb,"OUT","IN"],[te,"1","2"]); link(P(te,"3"),P(g,"P")); }
       let lockTee=null;
-      if(on("lockA",a.id)||on("lockB",a.id)){ const pc=put("pcheck",190,190); rodItems.push([pc,"IN","OUT"]); lockTee=put("tee",0,110); capItems.push([lockTee,"1","2"]); link(P(lockTee,"3"),P(pc,"X")); }
-      if(on("psB",a.id)){ const te=put("tee",0,110); const ps=put("ps",-10,190); const g=put("gauge",100,180); capItems.push([te,"1","2"]); link(P(te,"3"),P(ps,"P")); link(P(te,"4"),P(g,"P")); }
-      if(on("bleedoff",a.id)){ const te=put("tee",0,110); const fc=put("fcv2",110,180); capItems.push([te,"1","2"]); link(P(te,"3"),P(fc,"IN")); link(P(fc,"OUT"),tankKey()); }
+      if(on("lockA",a.id)||on("lockB",a.id)){ const pc=put("pcheck",190,240); rodItems.push([pc,"IN","OUT"]); lockTee=put("tee",0,165); capItems.push([lockTee,"1","2"]); link(P(lockTee,"3"),P(pc,"X")); }
+      if(on("psB",a.id)){ const te=put("tee",0,165); const ps=put("ps",-10,240); const g=put("gauge",100,230); capItems.push([te,"1","2"]); link(P(te,"3"),P(ps,"P")); link(P(te,"4"),P(g,"P")); }
+      if(on("bleedoff",a.id)){ const te=put("tee",0,165); const fc=put("fcv2",110,240); capItems.push([te,"1","2"]); link(P(te,"3"),P(fc,"IN")); link(P(fc,"OUT"),tankKey()); }
       chain(P(v,vport.cap),capItems.slice().reverse().map(x=>x),P(c,"cap"));
       chain(P(v,vport.rod),rodItems,P(c,"rod"));
       // supply line
@@ -1689,10 +1724,11 @@ $("bModel").onclick=()=>{
       if(on("reducing",a.id)){ pItems.push([put("prv",60,440),"IN","OUT"]); if(H){ const te=put("tee",260,430); const g=put("gauge",380,420); pItems.push([te,"1","2"]); link(P(te,"3"),P(g,"P")); } }
       chain(supKey(),pItems,P(v,"P")); if(H) link(P(v,"T"),tankKey());
     }
-    else { const mo=addComp("motor",x0,30,a.id); const plan=motorPlan(a);
-      if(plan.kind==="single"){ const v=addComp(plan.vt[0],x0+20,300); const ck=addComp("check",x0+190,60); link(P(v,"A"),P(mo,"M1")); link(P(mo,"M2"),P(ck,"IN")); link(P(ck,"OUT"),tankKey()); link(P(v,"P"),supKey()); if(v.t==="v42s") link(P(v,"T"),tankKey()); }
-      else { const v=addComp("v42s",x0+20,250); const r=addComp("v22",x0+220,380); link(P(v,"A"),P(mo,"M2")); link(P(v,"B"),P(mo,"M1")); link(P(r,"A"),P(v,"P")); link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
+    else { const mo=addComp("motor",x0,90,a.id); const plan=motorPlan(a);
+      if(plan.kind==="single"){ const v=addComp(plan.vt[0],x0+20,330); const ck=addComp("check",x0+190,120); link(P(v,"A"),P(mo,"M1")); link(P(mo,"M2"),P(ck,"IN")); link(P(ck,"OUT"),tankKey()); link(P(v,"P"),supKey()); if(v.t==="v42s") link(P(v,"T"),tankKey()); }
+      else { const v=addComp("v42s",x0+20,300); const r=addComp("v22",x0+220,420); link(P(v,"A"),P(mo,"M2")); link(P(v,"B"),P(mo,"M1")); link(P(r,"A"),P(v,"P")); link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
   });
+  Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); });
   sel=null; saveHose(); APP.resetMachine(); renderBoard(); $("bCheck").onclick();
 };
 $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); if(!b2) return; store.set("btarget",b2.dataset.t); APP.load(); });
@@ -1705,7 +1741,7 @@ const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base");
 function saveWire(){ store.set(wKey(),wires); netCache=null; }
 function loadWire(){ wires=store.get(wKey(),[]); netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
-let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], FIELD={x:0,rows:[]};
+let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=650, HS=1.9;
 const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b) return u; return null; };
 function buildUnits(){
   JACK={}; SW=[]; LOADS=[]; SENS=[]; GROUPS=[];
@@ -1721,18 +1757,23 @@ function buildUnits(){
   LOADS.push({a:"C1.A1",b:"C1.A2",name:"C1"}); LOADS.push({a:"CR1.A1",b:"CR1.A2",name:"CR1"}); sw("C1.1",(m)=>(m.cnt.C1||0)>=3);
   sw("ES.1",(m)=>!!m.inp.ES); sw("ES.2",(m)=>!!m.inp.ES);
   ["H1","H2","H3","H4","BZ"].forEach(h=>LOADS.push({a:h+".A1",b:h+".A2",name:h}));
-  // field terminal block (drawn), to the right of the photo
-  const sp=APP.simProb, rows=[];
-  Object.keys(sp.sensors).sort().forEach(s=>rows.push(s)); if(sp.ps) rows.push("PS");
-  const ys=new Set(); sp.act.forEach(a=>{ const v=a.valve; [v.y,v.plus,v.minus,v.run,v.dir].forEach(y=>{ if(y) ys.add(y); }); }); [...ys].sort().forEach(y=>rows.push(y));
-  const fx=HOT.W+30; FIELD={x:fx,rows};
-  const fj=(id,x,y,kind,lab)=>JACK[id]={id,x:fx+x,y,kind,lab,field:1};
-  rows.forEach((r,i)=>{ const y=80+i*52;
-    if(/^S\d/.test(r)){ fj(r+".BN",150,y,"p","갈(+)"); fj(r+".BU",210,y,"n","청(−)"); fj(r+".BK",270,y,"t","흑(출력)"); SENS.push({bn:r+".BN",bu:r+".BU",bk:r+".BK",name:r}); }
-    else if(/^(LS|PS)/.test(r)){ fj(r+".C",150,y,"t","COM"); fj(r+".NO",210,y,"t","NO"); fj(r+".NC",270,y,"t","NC"); sw(r,(m)=>!!m.sens[r]); }
-    else { fj(r+".A1",150,y,"p","+"); fj(r+".A2",210,y,"n","−"); LOADS.push({a:r+".A1",b:r+".A2",name:r}); }
+  // field devices are the parts placed on the hose board below the photo
+  LBL={}; FIELDC=[];
+  const fj=(id,x,y,kind,lab)=>JACK[id]={id,x,y,kind,lab,field:1};
+  const P=(c,ex,ey)=>[HX+(c.x+ex)*HS, HY+(c.y+ey)*HS];
+  comps.forEach(c=>{ const d=T[c.t];
+    if(/^v/.test(c.t)&&d.sol){ const names=vmap[c.id]||[]; for(let ci=0;ci<d.sol;ci++){ const base=`V${c.id}.c${ci}`, ex=ci===0?8:d.w-24;
+        const [x1,y1]=P(c,ex,80), [x2,y2]=P(c,ex+16,80); fj(base+".A1",x1,y1,"p","+"); fj(base+".A2",x2,y2,"n","−");
+        const nm=names[ci]||(`X${c.id}c${ci}`); LOADS.push({a:base+".A1",b:base+".A2",name:nm}); if(names[ci]) LBL[names[ci]]=base; } }
+    if(d.elec){ const base=`N${c.id}`; const lab=c.t==="ps"?"PS":c.lab;
+      Object.entries(d.elec).forEach(([k,[ex,ey]])=>{ const [x,y]=P(c,ex,ey); fj(`${base}.${k}`,x,y,k==="BN"?"p":k==="BU"?"n":"t",{BN:"갈",BU:"청",BK:"흑",C:"C",NO:"NO",NC:"NC"}[k]); });
+      if(!lab) return; if(!LBL[lab]) LBL[lab]=base;
+      if(c.t==="sensS") SENS.push({bn:base+".BN",bu:base+".BU",bk:base+".BK",name:lab}); else sw(base,(m)=>!!m.sens[lab]); }
   });
-  const W=fx+330; $("wboard").setAttribute("viewBox",`0 0 ${W} ${HOT.H}`); $("wboard").setAttribute("width",Math.round(W*wzoom)); $("wboard").setAttribute("height",Math.round(HOT.H*wzoom));
+  const W=Math.max(HOT.W,HX+1000*HS+20), Hh=HY+680*HS+20;
+  const svg=$("wboard"); svg.setAttribute("viewBox",`0 0 ${W} ${Hh}`); svg.setAttribute("width",Math.round(W*wzoom)); svg.setAttribute("height",Math.round(Hh*wzoom));
+  netCache=null;
+  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/><image id="wimg" href="${window.PANELIMG}" x="0" y="0" width="${HOT.W}" height="${HOT.H}" preserveAspectRatio="none"/><g id="whose"></g><g id="wdyn"></g>`;
 }
 
 // ---------- netlist evaluation ----------
@@ -1807,7 +1848,7 @@ function termText(p,nc){ // p = jack prefix of a contact set
 function coilText(c){
   if(/^K\d/.test(c)){ const n=+c.slice(1); return `RY${Math.ceil(n/3)}-${(n-1)%3+1}`; }
   if(c==="T1") return "타이머"; if(c==="C1") return "COUNT"; if(c==="CR1") return "RESET";
-  if(/^H\d/.test(c)) return "L"+c.slice(1); return "단자대";
+  if(/^H\d/.test(c)) return "L"+c.slice(1); return "밸브 코일";
 }
 function compile(L0){
   const jp=jumpPrep(L0), L=jp.L;
@@ -1823,17 +1864,18 @@ function compile(L0){
     if(l==="ES") return c.nc?"ES.2":"ES.1";
     if(l==="T1") return c.nc?`T1.${2+k}`:`T1.${k}`;
     if(l==="C1") return "C1.1";
-    if(/^(LS|PS)/.test(l)) return l;
+    if(/^(LS|PS)/.test(l)) return R(l);
     return null; };
+  const R=(l)=>LBL[l]||l;
   function contact(c,inN){ const out=newNode();
-    if(/^S\d/.test(c.l)){ att(inN,c.l+".BN"); att(MINUSN,c.l+".BU"); att(out,c.l+".BK"); ann[c.id]="갈→흑"; return out; }
+    if(/^S\d/.test(c.l)){ const q=R(c.l); att(inN,q+".BN"); att(MINUSN,q+".BU"); att(out,q+".BK"); ann[c.id]="갈→흑"; return out; }
     const p=use(c); if(!p){ notes.push(`${c.l} 단자 부족`); return out; }
-    ann[c.id]=termText(p,c.nc)+(c.l!==c.orig&&c.orig?" (점프)":"");
+    ann[c.id]=(/^(LS|PS)/.test(c.l)?`COM·${c.nc?"NC":"NO"}`:termText(p,c.nc))+(c.l!==c.orig&&c.orig?" (점프)":"");
     att(inN,p+".C"); att(out,p+(c.nc?".NC":".NO")); return out; }
   function series(n,inN){ let cur=inN; n.items.forEach(x=>{ cur=x.t==="c"?contact(x,cur):para(x,cur); }); return cur; }
   function para(n,inN){ const out=newNode(); n.items.forEach(b=>{ const o=series(b,inN); merge(o,out); }); return out; }
   let ESB=null; if(L.rungs.some(r=>r.bus)){ ESB=newNode(); att(PLUSN,"ES.2.C"); att(ESB,"ES.2.NC"); }
-  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); r.out.forEach(o=>{ const y=series(o.e,x); att(y,o.coil+".A1"); att(MINUSN,o.coil+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
+  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); r.out.forEach(o=>{ const y=series(o.e,x); att(y,R(o.coil)+".A1"); att(MINUSN,R(o.coil)+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
   const groups={}; nodes.forEach((js,i)=>{ const g=nf(i); (groups[g]=groups[g]||[]).push(...js); });
   const ws=[];
   const busOf=(u,pol)=>{ const ids=Object.keys(JACK).filter(i=>i.startsWith(u+"."+pol)); return ids; };
@@ -1860,16 +1902,17 @@ function compile(L0){
 
 // ---------- wiring checks ----------
 function wireCheck(){
-  const items=[]; const sp=APP.simProb, L=APP.curL;
+  const items=[]; const sp=Object.assign({},APP.simProb,{sensors:lastSens}), L=APP.curL;
   const root=staticNets(wires), MIN=root["DC.N0"];
+  const pa=analyze(); const badP=pa.items.filter(x=>!x[0]); if(badP.length) items.push([false,"배관·센서 먼저 확인",`배관 탭 검사에서 ${badP.length}개 항목이 맞지 않습니다 — 그대로 반영해서 채점합니다`]);
   let bad=0; wires.forEach(w=>{ const inMinus=root[w.a]===MIN; if(inMinus&&w.c==="r") bad++; if(!inMinus&&w.c!=="r") bad++; });
   items.push([bad===0,"배선 색상 (+ 적색, − 청색·흑색)",bad?`${bad}개 선의 색이 규칙과 다릅니다 (0V에 이어진 선은 청색/흑색, 나머지 + 쪽은 적색)`:"규칙대로 배선"]);
-  const ne=makeNetEval(wires); const m0=new S.Machine(sp,L,{netEval:ne}); m0.run(200);
+  const ne=makeNetEval(wires); const m0=new S.Machine(sp,L,{netEval:ne,plumb:lastPlumb,speed:lastSpeed}); m0.run(200);
   items.push([!m0.short,"단락 검사",m0.short?"+24V와 0V가 직접 이어졌습니다 — 실제라면 즉시 전원 차단":"정지 상태에서 단락 없음"]);
   const need=new Set(); L.rungs.forEach(r=>r.out.forEach(o=>{ if(/^K/.test(o.coil)) need.add(o.coil); }));
   const wired=new Set(LOADS.filter(l=>/^K/.test(l.name)&&root[l.a]!==root[l.b]&&wires.some(w=>w.a===l.a||w.b===l.a)&&wires.some(w=>w.a===l.b||w.b===l.b)).map(l=>l.name));
   items.push([wired.size>=need.size,"릴레이 개수",`회로 ${need.size}개 / 배선된 코일 ${wired.size}개${wired.size>need.size?" — 늘어난 것은 접점 추가용 점프여야 합니다(그 외 증감은 실격 사유)":wired.size<need.size?" — 코일이 덜 배선되었습니다":""}`]);
-  const mo={netEval:ne};
+  const mo={netEval:ne,plumb:lastPlumb,speed:lastSpeed};
   if(store.get("btarget","base")==="maint"){ S.gradeMaint(sp,L,APP.prob.mkind,mo).filter(x=>x.name!=="LS4 제거, 압력스위치(PS)로 대체").forEach(x=>items.push([x.ok,x.name,x.detail])); }
   else { const r=S.gradeCycles(sp,L,2,mo); if(r.msg.length) items.push([false,"전원 투입",r.msg[0]]);
     r.cycles.forEach(c=>items.push([c.ok,`${c.n}회차 PB1 ON-OFF`,c.ok?"실제: "+c.groups.map(APP.seqTxt).join(" → "):(c.why+(c.groups.length?"<br>실제: "+c.groups.map(APP.seqTxt).join(" → "):""))])); }
@@ -1879,7 +1922,14 @@ function wireCheck(){
 // ---------- wiring drawing ----------
 function renderWire(){
   const m=APP.machine, ne=useWire?m.netEval:null, st=ne&&ne.last;
-  const o=[`<image href="${window.PANELIMG}" x="0" y="0" width="${HOT.W}" height="${HOT.H}" preserveAspectRatio="none"/>`];
+  // hose board (scaled) under the photo
+  const hb=[`<g transform="translate(${HX},${HY}) scale(${HS})"><rect x="-10" y="-10" width="1020" height="700" rx="10" fill="#f6f8fa" stroke="#c4cbd2"/><text x="6" y="10" font-size="13" font-weight="700" fill="#5b6876">배관 회로도 (부품 배치·배관 탭에서 꾸민 그대로) — 솔레노이드·센서 단자에 전선을 꽂으세요</text>`];
+  const pp=(k)=>{ const [id,pt]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[pt]; return [c.x+q[0],c.y+q[1]]; };
+  hoses.forEach(h=>{ const a=pp(h.a), c2=pp(h.b); if(!a||!c2) return; hb.push(`<path d="M${a[0]} ${a[1]} C${a[0]} ${a[1]+50} ${c2[0]} ${c2[1]+50} ${c2[0]} ${c2[1]}" fill="none" stroke="#7d8690" stroke-width="2.6" opacity=".75"/>`); });
+  comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
+  if(!comps.length) hb.push(`<text x="500" y="340" font-size="22" text-anchor="middle" fill="#8a939c">먼저 「배관」 탭에서 부품을 배치하세요 (또는 모범 배관 보기)</text>`);
+  hb.push(`</g>`); $("whose").innerHTML=hb.join("");
+  const o=[];
   // overlays: buttons, relay LEDs, displays, lamps
   Object.entries(HOT.btn).forEach(([k,[x,y]])=>{ const on=!!m.inp[k], lock=HOT.lock.includes(k); const r=k==="ES"?70:34;
     o.push(`<g class="wbtn" data-inp="${k}" data-lock="${lock?1:0}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="${r}" fill="${on?"rgba(255,207,51,.35)":"rgba(255,255,255,0)"}" stroke="${on?"#ffcf33":"rgba(255,255,255,.0)"}" stroke-width="6"/></g>`);
@@ -1888,11 +1938,6 @@ function renderWire(){
   { const [x,y,w,h]=HOT.tdisp, tm=m.timer.T1; o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#140808"/><text x="${x+w/2}" y="${y+h/2+11}" font-size="30" text-anchor="middle" fill="#ff4d3d" font-family="var(--mono)">${tm?(Math.min(tm.acc,3000)/1000).toFixed(1):"0.0"}</text>`); }
   { const [x,y,w,h]=HOT.cdisp; o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#140808"/><text x="${x+w/2}" y="${y+h/2+12}" font-size="34" text-anchor="middle" fill="#ff4d3d" font-family="var(--mono)">${m.cnt.C1||0}</text>`); }
   Object.entries(HOT.lamps).forEach(([k,[x,y]])=>{ if(m.coil[k]) o.push(`<circle cx="${x}" cy="${y}" r="40" fill="#fff4a0" opacity=".55"/><circle cx="${x}" cy="${y}" r="24" fill="#fff" opacity=".6"/>`); });
-  // field terminal block
-  const F=FIELD;
-  o.push(`<rect x="${F.x-12}" y="6" width="330" height="${HOT.H-12}" rx="10" fill="#f1f3f5" stroke="#b8c0c8"/><text x="${F.x+150}" y="38" font-size="20" text-anchor="middle" font-weight="700" fill="#2b3239">현장 기기 단자대</text>`);
-  F.rows.forEach((r,i)=>{ const y=80+i*52; const on=/^(S|LS|PS)/.test(r)?!!m.sens[r]:!!m.coil[r];
-    o.push(`<rect x="${F.x}" y="${y-17}" width="88" height="34" rx="6" fill="${on?"#ffcf33":"#fff"}" stroke="#999"/><text x="${F.x+44}" y="${y+7}" font-size="18" text-anchor="middle" font-weight="700" fill="#222">${r}</text>`); });
   // wires
   wires.forEach((w,i)=>{ const a=JACK[w.a], b=JACK[w.b]; if(!a||!b) return; const sag=Math.min(260,40+Math.abs(a.x-b.x)*0.22);
     const d=`M${a.x} ${a.y} C${a.x} ${a.y+sag} ${b.x} ${b.y+sag} ${b.x} ${b.y}`; const col=w.c==="r"?"#d62a1f":w.c==="u"?"#1f4fd8":"#141618";
@@ -1900,9 +1945,9 @@ function renderWire(){
     o.push(`<path class="hosehit" data-w="${i}" d="${d}"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${live?9:7}" stroke-linecap="round" opacity=".9" pointer-events="none"/>${live?`<path d="${d}" fill="none" stroke="#ffe08a" stroke-width="2.5" stroke-dasharray="10 14" pointer-events="none"/>`:""}<circle cx="${a.x}" cy="${a.y}" r="9" fill="${col}" pointer-events="none"/><circle cx="${b.x}" cy="${b.y}" r="9" fill="${col}" pointer-events="none"/>`); });
   // jack hotspots
   Object.values(JACK).forEach(j=>{ const on=wpend===j.id, live=st&&!st.short&&st.plus.has(st.root[j.id]);
-    if(j.field){ const fill=j.kind==="p"?"#d63a2f":j.kind==="n"?"#2a5bd7":"#2b2f34"; o.push(`<g class="jack" data-j="${j.id}"><circle cx="${j.x}" cy="${j.y}" r="15" fill="#e8ebee" stroke="${on?"#f59e0b":"#8a939c"}" stroke-width="${on?5:2}"/><circle cx="${j.x}" cy="${j.y}" r="8" fill="${fill}"/><text x="${j.x}" y="${j.y-20}" font-size="12" text-anchor="middle" fill="#444">${esc(j.lab)}</text></g>`); return; }
+    if(j.field){ const fill=j.kind==="p"?"#d63a2f":j.kind==="n"?"#2a5bd7":"#2b2f34"; o.push(`<g class="jack" data-j="${j.id}"><circle cx="${j.x}" cy="${j.y}" r="12" fill="#e8ebee" stroke="${on?"#f59e0b":live?"#ff5a4d":"#8a939c"}" stroke-width="${on?5:2}"/><circle cx="${j.x}" cy="${j.y}" r="6" fill="${fill}"/><text x="${j.x}" y="${j.y+26}" font-size="12" text-anchor="middle" font-weight="700" fill="#444">${esc(j.lab)}</text></g>`); return; }
     o.push(`<g class="jack" data-j="${j.id}"><circle cx="${j.x}" cy="${j.y}" r="15" fill="rgba(255,255,255,0.01)" stroke="${on?"#f59e0b":live?"#ff5a4d":"rgba(255,255,255,.75)"}" stroke-width="${on?6:live?4:2}"/><title>${esc(j.id)}</title></g>`); });
-  $("wboard").innerHTML=o.join("");
+  $("wdyn").innerHTML=o.join("");
   $("wStat").innerHTML=`<span class="chip">전선 ${wires.length}개</span>`+(useWire?`<span class="chip ${m.short?"bad":wires.length?"ok":"bad"}">${m.short?"단락!":wires.length?"내 배선으로 동작 중":"배선 없음 — 움직이지 않습니다"}</span>`:`<span class="chip">래더 회로로 동작 중</span>`)+(wpend?`<span class="chip">선택: ${esc(wpend)} → 연결할 단자를 누르세요</span>`:"");
 }
 let hSig="";
@@ -1936,10 +1981,10 @@ function renderAlloc(){
 }
 
 // ---------- tabs & lifecycle ----------
-$("btabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const t=b.dataset.t; document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire"; store.set("btab",t); if(t==="wire"){ wSig=""; requestAnimationFrame(wireTick); } else { hSig=""; requestAnimationFrame(hoseTick); } });
+$("btabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const t=b.dataset.t; document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire"; store.set("btab",t); if(t==="wire"){ buildUnits(); APP.resetMachine(); wSig=""; requestAnimationFrame(wireTick); } else { hSig=""; requestAnimationFrame(hoseTick); } });
 
 window.BUILD={
-  machineOpts(sp){ return {plumb:lastPlumb, speed:lastSpeed, netEval:useWire?currentNetEval():null}; },
+  machineOpts(sp){ return {plumb:lastPlumb, speed:lastSpeed, sensors:lastSens, netEval:useWire?currentNetEval():null}; },
   load(){
     loadHose(); sel=null; pend=null; renderPalette();
     document.querySelectorAll("#viewSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===view));
