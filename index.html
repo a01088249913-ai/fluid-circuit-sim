@@ -177,6 +177,11 @@ details.sheetbox[open] summary::before{content:"▾"}
 details.sheetbox[open] summary{margin-bottom:10px}
 .mode-build .grid{grid-template-columns:minmax(0,1fr)}
 .pbtip{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:560px;background:#1f2933;color:#fff;padding:12px 16px;border-radius:10px;font-size:14px;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:50}
+.omodal{position:fixed;inset:0;background:rgba(15,23,32,.55);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto}
+.omodal[hidden]{display:none}.obox{background:var(--card);border-radius:12px;max-width:1200px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.ohead{display:flex;align-items:center;gap:6px;padding:12px 16px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--card);border-radius:12px 12px 0 0}
+.obody{padding:8px 16px 20px}.obody h3{font-size:15px;margin:14px 0 6px}.owrap{overflow-x:auto;border:1px solid var(--line2);border-radius:8px;background:#fff;padding:6px}
+#origFluid{width:100%;height:auto;display:block;max-width:1000px}
 #ctrlSlot .ctrl{margin:0 0 10px;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel)}
 .mode-build #ladCol{display:none}
 .mode-build #leftCol{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
@@ -209,6 +214,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
       <span class="t" id="clk">60:00</span>
       <button class="btn small" id="clkGo">시작</button>
       <button class="btn small ghost" id="clkRst">리셋</button>
+      <button class="btn small" id="bOrig">원본 회로도</button>
       <button class="btn small primary" id="bMock">모의시험 시작</button>
     </div>
   </header>
@@ -351,6 +357,10 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
   </details>
   <p class="small"><b>제작자</b> 한국폴리텍대학 진주캠퍼스 자동화과 장성욱 · 정정 예시와 유지보수 회로는 이 시뮬레이터에서 2회 연속 정상 동작을 확인한 하나의 답이며, 공식 정답과 다를 수 있습니다.</p>
 </div>
+<div id="origModal" class="omodal" hidden><div class="obox"><div class="ohead"><b id="origTitle">원본 회로도</b><span class="sub" style="margin-left:8px;color:var(--muted)">문제지 내용을 시뮬레이터가 다시 그린 그림</span><span class="spacer" style="flex:1"></span><button class="btn small primary" id="origClose">닫기</button></div>
+  <div class="obody"><h3 id="origFluidH">가. 공기압 회로도</h3><div class="owrap"><svg id="origFluid" viewBox="0 0 1000 680"></svg></div>
+  <h3>나. 전기회로도 (문제지 원본 — 오류 포함)</h3><div class="owrap"><svg id="origLad"></svg></div>
+  <h3>다. 변위단계선도</h3><div class="owrap"><svg id="origStep"></svg></div></div></div></div>
 <div class="pop" id="pop" hidden></div>
 
 <script>
@@ -957,6 +967,20 @@ $("mSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!
 let mT=null; $("mText").addEventListener("input",()=>{ clearTimeout(mT); mT=setTimeout(()=>applyTxt($("mText").value),500); });
 $("mReset").onclick=()=>{ store.set("mlad:"+probKey(),null); curL=clone(fixL); $("mText").value=lad2txt(curL); applyTxt($("mText").value); };
 $("mExample").onclick=()=>{ $("mText").value=lad2txt(exL); applyTxt($("mText").value); };
+// ---------- original circuit viewer (redrawn from the problem data) ----------
+function openOrig(){
+  const maintCtx=mode==="maint"||(mode==="build"&&store.get("btarget","base")==="maint");
+  $("origTitle").textContent=`원본 회로도 — ${prob.kind==="P"?"공기압":"유압"} ${prob.no}번`;
+  $("origFluidH").textContent=`가. ${prob.kind==="P"?"공기압":"유압"} 회로도${maintCtx?" (유지보수 변경 반영)":""}`;
+  try{ $("origFluid").innerHTML=window.BUILD.origFluidSVG(simProb, maintCtx?(window.BUILD.MT[probKey()]||{}):{}); }catch(e){ $("origFluid").innerHTML=`<text x="20" y="40">그릴 수 없습니다: ${e.message}</text>`; }
+  const keep={curL,machine,mode,showAns,ladVer};
+  try{ curL=clone(baseL); machine=new S.Machine(prob,curL); mode="view"; showAns=false; drawLadder("origLad"); }
+  finally{ curL=keep.curL; machine=keep.machine; mode=keep.mode; showAns=keep.showAns; ladVer++; }
+  const sd=$("stepdia"); $("origStep").setAttribute("viewBox",sd.getAttribute("viewBox")); $("origStep").setAttribute("width","520"); $("origStep").innerHTML=sd.innerHTML;
+  $("origModal").hidden=false; }
+$("bOrig").onclick=openOrig; $("origClose").onclick=()=>$("origModal").hidden=true;
+$("origModal").addEventListener("click",e=>{ if(e.target.id==="origModal") $("origModal").hidden=true; });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") $("origModal").hidden=true; });
 function load(){
   prob=(kind==="P"?P.PN:P.HY)[no-1];
   baseL=S.buildLadder(prob.rungs); fixL=remapIds(baseL,S.buildLadder(prob.fix));
@@ -1897,6 +1921,7 @@ function renderPalette(){
   $("palette").innerHTML=Object.entries(groups).map(([g,ks])=>`<div class="grp">${g}</div>`+ks.map(k=>`<button data-t="${k}"><svg width="26" height="20" viewBox="0 0 ${T[k].w} ${T[k].h}">${partArt(k,T[k].w,T[k].h,true)}</svg>${T[k].n}</button>`).join("")).join("");
 }
 $("palette").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; addComp(b.dataset.t); });
+let quietBuild=false;
 function addComp(t,x,y,role){
   const d=T[t]; let px=x, py=y;
   if(px===undefined){ const n=comps.length; px=20+(n*37)%600; py=280+(n*23)%200; }
@@ -1905,7 +1930,7 @@ function addComp(t,x,y,role){
   if(isSens(t)){ const L=sensLabels(t); c.lab=role||L.find(l=>!comps.some(q=>q.lab===l))||L[0]; }
   if(t==="sensLS") c.dir="R";
   if(d.adj) c.set={su:0.3,relief:2.0,prv:isH()?4.0:0.5,cbv:1.0,ps:1.0}[t];
-  comps.push(c); sel=c.id; saveHose(); renderBoard(); return c;
+  comps.push(c); if(quietBuild) return c; sel=c.id; saveHose(); renderBoard(); return c;
 }
 function svgPt(e){ const svg=$("board"); const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
 function stepSet(c,dir){ const st=T[c.t].adj.step, mx=T[c.t].adj.max; c.set=Math.max(0,Math.min(mx,Math.round(((c.set??0)+dir*st)/st)*st)); c.set=+c.set.toFixed(2); saveHose(); renderBoard(); }
@@ -1929,8 +1954,8 @@ $("board").addEventListener("pointerup",()=>{ if(drag){ if(drag.moved) saveHose(
 $("viewSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; view=b.dataset.v; store.set("hview",view); document.querySelectorAll("#viewSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===view)); renderBoard(); });
 $("bClear").onclick=()=>{ comps=[]; hoses=[]; sel=null; pend=null; saveHose(); APP.resetMachine(); renderBoard(); $("checkRes").innerHTML=""; };
 $("bCheck").onclick=()=>{ const r=analyze(); $("checkRes").innerHTML=r.items.map(([ok,t,d])=>APP.item(ok,t,d)).join(""); };
-$("bModel").onclick=()=>{
-  comps=[]; hoses=[]; nextId=1; const H=isH(), sp=APP.simProb, m=mt();
+function buildModel(sp,m){
+  comps=[]; hoses=[]; nextId=1; const H=isH(); sp=sp||APP.simProb; m=m||mt();
   const P=(c,p)=>c.id+"."+p, link=(a,b)=>hoses.push({a,b});
   const on=(k,id)=>(m[k]||[]).includes(id);
   let src, dP, dT, pi=1, ti=1;
@@ -1969,8 +1994,22 @@ $("bModel").onclick=()=>{
   });
   Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; const sc2=addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); if(t==="sensLS") sc2.dir=end===1?"R":"L"; });
   comps.forEach(c=>{ if(T[c.t].adj) c.set={su:0.5,relief:4.0,prv:H?2.0:0.3,cbv:3.0,ps:3.0}[c.t]; });
-  sel=null; saveHose(); APP.resetMachine(); renderBoard(); $("bCheck").onclick();
-};
+}
+$("bModel").onclick=()=>{ buildModel(); sel=null; saveHose(); APP.resetMachine(); renderBoard(); $("bCheck").onclick(); };
+// symbol drawing of the circuit as given on the problem sheet (redrawn, not a copy)
+function origFluidSVG(sp,m){
+  const keep={comps,hoses,nextId,vmap,physSpeed,vinit,basePF,sel,fluidCache,view};
+  let out="";
+  try{ quietBuild=true; buildModel(sp,m); quietBuild=false; analyze(); view="sym"; sel=null; const o=[], H=isH();
+    o.push(`<rect width="1000" height="680" fill="#fff"/>`);
+    comps.forEach(c=>{ const d=T[c.t]; o.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,true,c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c,1)}`); const lab=compLabel(c); if(lab) o.push(`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="var(--minus)">${lab}</text>`); o.push(`</g>`); });
+    const pos=(k)=>{ const [id,p]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[p]; return [c.x+q[0],c.y+q[1]]; };
+    hoses.forEach(h=>{ const a=pos(h.a), b=pos(h.b); if(!a||!b) return; o.push(`<path d="M${a[0]} ${a[1]} L${a[0]} ${(a[1]+b[1])/2} L${b[0]} ${(a[1]+b[1])/2} L${b[0]} ${b[1]}" fill="none" stroke="#1d2024" stroke-width="2"/>`); });
+    comps.forEach(c=>Object.entries(T[c.t].ports).forEach(([p,q])=>{ const k=c.id+"."+p; if(hoses.some(h=>h.a===k||h.b===k)) o.push(`<circle cx="${c.x+q[0]}" cy="${c.y+q[1]}" r="3.5" fill="#1d2024"/>`); }));
+    out=o.join("");
+  } finally { quietBuild=false; comps=keep.comps; hoses=keep.hoses; nextId=keep.nextId; vmap=keep.vmap; physSpeed=keep.physSpeed; vinit=keep.vinit; basePF=keep.basePF; sel=keep.sel; fluidCache=keep.fluidCache; view=keep.view; }
+  return out;
+}
 $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); if(!b2) return; store.set("btarget",b2.dataset.t); APP.load(); });
 
 /* =====================================================================
@@ -2414,7 +2453,7 @@ function renderAlloc(){
 // ---------- tabs & lifecycle ----------
 $("btabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const t=b.dataset.t; document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire"; store.set("btab",t); if(t==="wire"){ if(vb&&vb.fresh) vb=null; buildUnits(); APP.resetMachine(); wSig=""; requestAnimationFrame(wireTick); } else { hSig=""; requestAnimationFrame(hoseTick); } });
 
-window.BUILD={
+window.BUILD={ origFluidSVG, MT,
   machineOpts(sp){ return {plumb:lastPlumb, speed:lastSpeed, sensors:lastSens, netEval:useWire?currentNetEval():null, fluid:fluidEval}; },
   load(){
     loadHose(); sel=null; pend=null; renderPalette();
