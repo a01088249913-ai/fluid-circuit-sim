@@ -174,6 +174,16 @@ details.sheetbox[open] summary{margin-bottom:10px}
 .refbox summary{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .reflad{max-height:330px;overflow:auto;margin-top:6px}
 .brand .maker{font-size:12.5px;color:var(--ink);opacity:.75}
+.chips button{position:relative}
+.chips button.done{border-color:var(--ok);color:var(--ok)}
+.chips button[aria-pressed="true"].done{color:#fff}
+.pdot{position:absolute;bottom:1px;left:0;right:0;font-size:6px;letter-spacing:1px;font-style:normal;line-height:1}
+.mockbar{border:2px solid var(--plus)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.mocksteps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.mocksteps li{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+body.mock .pick,body.mock .steps{pointer-events:none;opacity:.45}
+body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock #bMock{display:none}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 
@@ -188,6 +198,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
       <span class="t" id="clk">60:00</span>
       <button class="btn small" id="clkGo">시작</button>
       <button class="btn small ghost" id="clkRst">리셋</button>
+      <button class="btn small primary" id="bMock">모의시험 시작</button>
     </div>
   </header>
 
@@ -206,6 +217,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
     <button data-m="maint" aria-pressed="false"><b>3</b><span><strong>유지보수</strong><small>변경된 회로 확인</small></span></button>
   </nav>
   <ol class="guide" id="guide"></ol>
+  <div class="card mockbar" id="mockBar" hidden></div>
 
   <div class="card" id="buildArea" hidden>
     <div class="bhead">
@@ -244,7 +256,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
           <button class="btn small primary" id="wCheck">배선 채점</button>
         </div>
         <details class="refbox" id="refBox" open><summary><b>정답 도면</b> <span class="small">초록 글씨 = 꽂을 단자 · 예) RY1-2 11·14 = 1번 릴레이 유닛의 RY2, 11번과 14번 단자</span></summary>
-          <div class="ladwrap reflad"><svg id="ladRef"></svg></div></details>
+          <div class="small" id="refNote" style="color:var(--edit)"></div><div class="ladwrap reflad"><svg id="ladRef"></svg></div></details>
         <div class="stat" id="wStat"></div>
         <div class="boardbox"><svg id="wboard"></svg></div>
         <details class="mini"><summary>단자 안내</summary>
@@ -298,6 +310,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
           <button class="btn primary" id="bGrade">채점하기</button>
           <button class="btn small" id="bAns">정정 예시</button>
           <button class="btn small" id="bLines" aria-pressed="false">선 위치 편집</button>
+          <button class="btn small" id="bRnd" aria-pressed="false">랜덤 오류 문제</button>
           <button class="btn small ghost" id="bUndo">원래대로</button>
           <span class="spacer"></span>
           <span class="pill" id="editCount">변경 0개</span>
@@ -462,7 +475,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
       const x = this.pos[a];
       s[k] = end === 1 ? x >= 0.97 : x <= 0.03;
     }
-    if (this.p.ps) s.PS = this.psCnt >= PS_T; // ~250ms of holding pressure
+    if (this.p.ps) s.PS = this.psCnt >= PS_T && this.plumb.__psOK !== false; // ~250ms of holding pressure
     this.sens = s;
   };
   Machine.prototype.val = function (l) {
@@ -882,6 +895,10 @@ function reducingText(p){
 // ---------- state ----------
 let kind=store.get("kind","P"), no=store.get("no",1), mode=store.get("mode","base");
 let prob, baseL, fixL, curL, machine, showAns=false, simProb, ladVer=0;
+let rnd=null;            // random-fault practice {key, L, n}
+let mock=null;           // mock exam state
+const prog=store.get("prog",{});
+function markDone(what){ const k=probKey(); prog[k]=prog[k]||{}; if(!prog[k][what]){ prog[k][what]=true; store.set("prog",prog); renderChips(); } }
 const ladAll=store.get("lad2",{});
 const probKey=()=>kind+no;
 window.APP={get prob(){return prob},get simProb(){return simProb},get curL(){return curL},get machine(){return machine},get fixL(){return fixL},get mode(){return mode},probKey,store,clone,setPlumb(pl,sp,sens){ if(mode==="build"){ machine.plumb=pl||{}; machine.speed=sp||{}; if(sens){ machine.p=Object.assign({},simProb,{sensors:sens}); machine.computeSensors(); } } }};
@@ -897,11 +914,13 @@ function remapIds(base, fix){
 function load(){
   prob=(kind==="P"?P.PN:P.HY)[no-1];
   baseL=S.buildLadder(prob.rungs); fixL=remapIds(baseL,S.buildLadder(prob.fix));
+  if(rnd&&rnd.key!==probKey()) rnd=null;
+  if(rnd&&mode==="base") baseL=rnd.L;
   showAns=false;
   let opts={};
-  if(mode==="base"){ simProb=prob; const sv=ladAll[probKey()]; curL=sv?clone(sv):clone(baseL); }
+  if(mode==="base"){ simProb=prob; const sv=rnd?rnd.cur:ladAll[probKey()]; curL=sv?clone(sv):clone(baseL); }
   else if(mode==="maint"){ simProb=MA.maintProblem(prob); curL=S.buildLadder(simProb.rungs); }
-  else { const bt=store.get("btarget","base"); if(bt==="maint"){ simProb=MA.maintProblem(prob); curL=S.buildLadder(simProb.rungs); } else { simProb=prob; curL=clone(fixL); } }
+  else { const bt=store.get("btarget","base"); if(bt==="maint"){ simProb=MA.maintProblem(prob); curL=S.buildLadder(simProb.rungs); } else { simProb=prob; curL=mock?clone(baseL):clone(fixL); } }
   if(mode==="build"&&window.BUILD) opts=window.BUILD.machineOpts(simProb);
   machine=new S.Machine(simProb,curL,opts);
   trace=[]; ladVer++;
@@ -911,11 +930,13 @@ function load(){
   renderAll();
   if(mode==="build" && window.BUILD) window.BUILD.load();
 }
-function saveLad(){ ladAll[probKey()]=curL; store.set("lad2",ladAll); ladVer++; machine.L=curL; updateEditCount(); }
+function saveLad(){ if(rnd){ rnd.cur=curL; } else { ladAll[probKey()]=curL; store.set("lad2",ladAll); } ladVer++; machine.L=curL; updateEditCount(); }
 
 // ---------- header controls ----------
 function renderChips(){
-  $("chips").innerHTML=[1,2,3,4,5,6,7,8].map(n=>`<button data-n="${n}" aria-pressed="${n===no}" aria-label="${n}번 문제">${n}</button>`).join("");
+  $("chips").innerHTML=[1,2,3,4,5,6,7,8].map(n=>{ const g=prog[kind+n]||{}; const cnt=["base","build","buildM","mock"].filter(x=>g[x]).length;
+    const tip=[g.base?"기본동작 정정 ✓":"",g.build?"회로 구성 ✓":"",g.buildM?"유지보수 구성 ✓":"",g.mock?"모의시험 합격 ✓":""].filter(Boolean).join(", ");
+    return `<button data-n="${n}" aria-pressed="${n===no}" class="${cnt?"done":""}" title="${tip||"아직 안 풂"}" aria-label="${n}번 문제 ${tip}">${n}${cnt?`<i class="pdot">${"●".repeat(cnt)}</i>`:""}</button>`; }).join("");
   document.querySelectorAll("#kindSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===kind));
   document.querySelectorAll("#modeSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===mode));
   document.body.classList.remove("mode-build","mode-base","mode-maint"); document.body.classList.add("mode-"+mode);
@@ -956,9 +977,10 @@ function renderStatic(){
   $("wC1").hidden=!has("counter"); $("wT1").hidden=!has("timer");
   $("bES").setAttribute("aria-pressed","false");
   const base=mode==="base";
-  ["editCount","bUndo","bAns","bLines","bGrade"].forEach(id=>$(id).hidden=!(base||(id==="bGrade"&&mode==="maint")));
+  ["editCount","bUndo","bAns","bLines","bGrade","bRnd"].forEach(id=>$(id).hidden=!(base||(id==="bGrade"&&mode==="maint")));
+  $("bRnd").textContent=rnd?"원래 문제로":"랜덤 오류 문제"; $("bRnd").setAttribute("aria-pressed",!!rnd);
   $("ladTitle").textContent=base?"전기회로도 (문제지 원본에서 수정)":mode==="maint"?"유지보수 회로 예시":(store.get("btarget","base")==="maint"?"유지보수 회로 예시 (배선 참고용)":"기본동작 정답 회로 (배선 참고용)");
-  $("ladHint").textContent=base?`${prob.kind==="P"?"공기압":"유압"} ${prob.no}번 · 릴레이 개수는 그대로`:mode==="maint"?"PB2·PB3·비상정지로 직접 확인해 보세요":"배관이 맞으면 PB1으로 순서대로 동작합니다";
+  $("ladHint").textContent=base?(rnd?`랜덤 오류 문제 · 오류 ${rnd.n}개 숨어 있음`:`${prob.kind==="P"?"공기압":"유압"} ${prob.no}번 · 릴레이 개수는 그대로`):mode==="maint"?"PB2·PB3·비상정지로 직접 확인해 보세요":"배관이 맞으면 PB1으로 순서대로 동작합니다";
   $("bGrade").textContent=base?"채점하기 (PB1 2회)":"유지보수 자동 점검";
   $("ansBox").hidden=true; $("bAns").textContent="정정 예시 보기";
   renderSheet();
@@ -1281,7 +1303,7 @@ $("bGrade").onclick=()=>{
     const r=S.gradeCycles(prob,curL,2), {c,s}=countChanges(); const h=[];
     if(r.msg.length) h.push(item(false,"전원 투입",r.msg[0]));
     r.cycles.forEach(cy=>{ h.push(item(cy.ok,`${cy.n}회차 PB1 ON-OFF`, cy.ok?`실제: ${cy.groups.map(seqTxt).join(" → ")} · 초기 위치 복귀`:`${cy.why}<br>실제: ${cy.groups.length?cy.groups.map(seqTxt).join(" → "):"없음"}`)); });
-    if(r.ok) h.push(item(true,"합격 조건",`변위단계선도대로 2회 연속 동작 · 접점 변경 ${c}개, 선 위치 변경 ${s}곳 · 릴레이 개수 그대로`));
+    if(r.ok){ h.push(item(true,"합격 조건",`변위단계선도대로 2회 연속 동작 · 접점 변경 ${c}개, 선 위치 변경 ${s}곳 · 릴레이 개수 그대로`)); if(!rnd) markDone("base"); }
     res.innerHTML=h.join("");
   } else {
     const r=S.gradeMaint(simProb,curL,prob.mkind);
@@ -1289,6 +1311,29 @@ $("bGrade").onclick=()=>{
     res.innerHTML=r.map(x=>item(x.ok,x.name,x.detail)).join("")+(flu.length?`<div class="note">배관 변경 항목(${flu.map(k=>MK[k].t).join(", ")})은 아래 문제지 요약의 설명을 참고하세요.</div>`:"");
   }
 };
+
+// ---------- random fault practice ----------
+function mutate(L0){
+  const L=clone(L0), all=[]; const w=(n)=>{ if(!n) return; if(n.t==="c") all.push(n); else n.items.forEach(w); };
+  L.rungs.forEach(r=>{ w(r.s); r.out.forEach(o=>w(o.e)); });
+  const ks=[...new Set(all.filter(c=>/^K/.test(c.l)).map(c=>c.l))], sens=Object.keys(prob.sensors);
+  const pars=[]; const wp=(S0)=>{ if(!S0||S0.t!=="s") return; S0.items.forEach((x,i)=>{ if(x.t==="p"){ pars.push({S:S0,i,P:x}); x.items.forEach(wp); } }); };
+  L.rungs.forEach(r=>{ wp(r.s); r.out.forEach(o=>wp(o.e)); });
+  const R=(n)=>Math.floor(Math.random()*n);
+  const ops=[
+    ()=>{ const c=all[R(all.length)]; c.nc=!c.nc; return true; },
+    ()=>{ const cs=all.filter(c=>/^K/.test(c.l)); if(!cs.length||ks.length<2) return false; const c=cs[R(cs.length)]; const o=ks.filter(k=>k!==c.l); c.l=o[R(o.length)]; return true; },
+    ()=>{ const cs=all.filter(c=>sens.includes(c.l)); if(!cs.length) return false; const c=cs[R(cs.length)]; const same=sens.filter(s=>s!==c.l&&s[0]===c.l[0]&&(s.startsWith("LS")===c.l.startsWith("LS"))); if(!same.length) return false; c.l=same[R(same.length)]; return true; },
+    ()=>{ if(!pars.length) return false; const {S:S0,i,P:Pn}=pars[R(pars.length)]; const B=Pn.items[0];
+      if(Math.random()<.5){ if(i+1>=S0.items.length) return false; B.items.push(S0.items.splice(i+1,1)[0]); } else { if(B.items.length<2) return false; S0.items.splice(i+1,0,B.items.pop()); } return true; }
+  ];
+  const n=1+R(3); let done=0, guard=0; while(done<n&&guard++<30){ if(ops[R(ops.length)]()) done++; }
+  return {L,n:done};
+}
+function startRandom(){
+  for(let t=0;t<40;t++){ const r=mutate(fixL); if(!S.gradeCycles(prob,r.L,1).ok){ rnd={key:probKey(),L:r.L,n:r.n,cur:null}; load(); $("ladHint").textContent=`랜덤 오류 문제 · 오류 ${r.n}개 숨어 있음 (정답 회로에 무작위로 심음)`; return; } }
+}
+$("bRnd").onclick=()=>{ if(rnd){ rnd=null; load(); } else startRandom(); };
 
 // ---------- buttons ----------
 function hold(btn,key){
@@ -1319,7 +1364,34 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 window.APP.start=()=>{ renderChips(); load(); requestAnimationFrame(loop); };
-window.APP.load=load; window.APP.drawLadder=drawLadder;
+window.APP.load=load; window.APP.markDone=markDone;
+// ---------- mock exam ----------
+function mockRender(){
+  const bar=$("mockBar"); document.body.classList.toggle("mock",!!mock); bar.hidden=!mock; if(!mock) return;
+  const name=`${mock.kind==="P"?"제1과제 공기압":"제2과제 유압"} ${mock.no}번`;
+  const st=(r)=>r?(r.ok?`<span class="chip ok">합격</span>`:`<span class="chip bad">불합격</span>`):`<span class="chip">미평가</span>`;
+  const list=(r)=>r?`<div class="res">${r.items.map(([ok,t,d])=>item(ok,t,d)).join("")}</div>`:"";
+  bar.innerHTML=`<div class="card-h"><h2>모의시험 · ${name}</h2><span class="sub">평가 기회는 단계마다 한 번 · 모범 보기·정정 예시는 잠겨 있습니다</span></div>
+    <ol class="mocksteps">
+      <li><b>회로 구성 + 기본동작</b> — 문제지 회로도의 오류를 찾아 고친 회로대로 배관·배선 ${st(mock.r1)} <button class="btn small primary" id="mEval1" ${mock.r1?"disabled":""}>기본동작 평가 요청</button></li>
+      <li><b>시스템 유지보수</b> — 아래 유지보수 계획대로 회로를 직접 바꿔 배관·배선 ${st(mock.r2)} <button class="btn small primary" id="mEval2" ${!mock.r1||mock.r2?"disabled":""}>유지보수 평가 요청</button></li>
+    </ol>
+    <div class="btool"><button class="btn small" id="mEnd">${mock.r2?"결과 닫기":"시험 종료"}</button><span class="small">${mock.r2?`최종: ${mock.r1.ok&&mock.r2.ok?"<b style=\"color:var(--ok)\">합격 수준</b>":"<b style=\"color:var(--bad)\">보완 필요</b>"} · 걸린 시간 ${Math.round((mock.end-mock.t0)/60000)}분`:""}${mock.r1&&!mock.r1.ok?" · 기본동작을 완성하지 못하면 실제 시험에서는 실격입니다":""}</span></div>
+    ${mock.r1?`<details class="mini" ${mock.r2?"":"open"}><summary>기본동작 평가 내역</summary>${list(mock.r1)}</details>`:""}${mock.r2?`<details class="mini" open><summary>유지보수 평가 내역</summary>${list(mock.r2)}</details>`:""}`;
+  const e1=$("mEval1"), e2=$("mEval2");
+  if(e1) e1.onclick=()=>{ const r=window.BUILD.evaluate(); mock.r1={ok:r.every(x=>x[0]),items:r}; if(mock.r1.ok) markDone("build"); store.set("btarget","maint"); load(); mockRender(); };
+  if(e2) e2.onclick=()=>{ const r=window.BUILD.evaluate(); mock.r2={ok:r.every(x=>x[0]),items:r}; mock.end=Date.now(); clkRun=false; if(mock.r1.ok&&mock.r2.ok) markDone("mock"); mockRender(); };
+  $("mEnd").onclick=()=>{ mock=null; window.APP.mock=false; store.set("btarget","base"); mockRender(); load(); };
+}
+$("bMock").onclick=()=>{
+  const all=[...P.PN,...P.HY]; const p=all[Math.floor(Math.random()*all.length)];
+  kind=p.kind; no=p.no; mode="build"; rnd=null;
+  mock={kind,no,t0:Date.now(),r1:null,r2:null}; window.APP.mock=true;
+  ["base","maint"].forEach(t=>{ store.set("hose:"+kind+no+":"+t+":mock",null); store.set("wire2:"+kind+no+":"+t+":mock",[]); });
+  store.set("btarget","base"); renderChips(); load(); mockRender();
+  clkLeft=3600; clkRun=true; clkLast=performance.now(); $("clkGo").textContent="일시정지";
+  $("sheetBox").open=true; window.scrollTo({top:0});
+}; window.APP.drawLadder=drawLadder;
 })();
 
 </script>
@@ -1345,8 +1417,8 @@ const T={
   v43abt:{n:"4/3 밸브 (A·B·T 접속)",w:170,h:100,ports:{A:[60,12],B:[110,12],P:[60,88],T:[110,88]},grp:"방향제어밸브",h_only:1,sol:2,pos:3},
   v22:{n:"2/2 편솔 밸브",w:110,h:100,ports:{A:[55,12],P:[55,88]},grp:"방향제어밸브",h_only:1,sol:1},
   pu:{n:"유압 파워유닛",w:190,h:130,ports:{P:[70,14],T:[120,14]},grp:"공급",h_only:1},
-  su:{n:"서비스 유닛",w:120,h:120,ports:{OUT:[106,42]},grp:"공급",p_only:1},
-  relief:{n:"릴리프 밸브",w:96,h:90,ports:{P:[28,80],T:[68,80]},grp:"공급",h_only:1},
+  su:{n:"서비스 유닛",w:120,h:120,ports:{OUT:[106,42]},grp:"공급",p_only:1,adj:{step:0.05,max:1.0}},
+  relief:{n:"릴리프 밸브",w:96,h:90,ports:{P:[28,80],T:[68,80]},grp:"공급",h_only:1,adj:{step:0.1,max:7}},
   gauge:{n:"압력계",w:76,h:86,ports:{P:[38,78]},grp:"공급"},
   distP:{n:"분배기 1×6 (공급)",w:240,h:48,ports:{P1:[22,24],P2:[61,24],P3:[100,24],P4:[139,24],P5:[178,24],P6:[217,24]},grp:"공급",bus:1},
   distT:{n:"분배기 1×6 (탱크 리턴)",w:240,h:48,ports:{T1:[22,24],T2:[61,24],T3:[100,24],T4:[139,24],T5:[178,24],T6:[217,24]},grp:"공급",h_only:1,bus:1},
@@ -1354,11 +1426,11 @@ const T={
   check:{n:"체크밸브",w:96,h:46,ports:{IN:[14,23],OUT:[82,23]},grp:"압력·유량"},
   fcv1:{n:"일방향 유량조절밸브",w:96,h:52,ports:{IN:[14,26],OUT:[82,26]},grp:"압력·유량"},
   fcv2:{n:"양방향 유량조절밸브",w:96,h:52,ports:{IN:[14,26],OUT:[82,26]},grp:"압력·유량"},
-  prv:{n:"감압밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30]},grp:"압력·유량"},
-  cbv:{n:"카운터밸런스 밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30]},grp:"압력·유량",h_only:1},
+  prv:{n:"감압밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30]},grp:"압력·유량",adj:{step:0.05,max:7}},
+  cbv:{n:"카운터밸런스 밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30]},grp:"압력·유량",h_only:1,adj:{step:0.1,max:7}},
   pcheck:{n:"파일럿 체크밸브",w:96,h:60,ports:{IN:[14,30],OUT:[82,30],X:[48,54]},grp:"압력·유량",h_only:1},
   qev:{n:"급속배기밸브",w:96,h:52,ports:{P:[14,26],A:[82,26]},grp:"압력·유량",p_only:1},
-  ps:{n:"압력스위치",w:80,h:60,ports:{P:[40,52]},grp:"압력·유량",elec:{C:[14,9],NO:[40,9],NC:[66,9]}},
+  ps:{n:"압력스위치",w:80,h:60,ports:{P:[40,52]},grp:"압력·유량",adj:{step:0.1,max:7},elec:{C:[14,9],NO:[40,9],NC:[66,9]}},
   sensS:{n:"정전용량형 센서",w:64,h:50,ports:{},grp:"센서",p_only:1,elec:{BN:[12,44],BU:[32,44],BK:[52,44]}},
   sensLS:{n:"리밋스위치",w:76,h:60,ports:{},grp:"센서",elec:{C:[14,9],NO:[38,9],NC:[62,9]}},
 };
@@ -1366,7 +1438,7 @@ const KIND=()=>APP.prob.kind;
 const isH=()=>KIND()==="H";
 let lastSens={}; let lastSpeed={}; let vmap={}; let comps=[], hoses=[], view=store.get("hview","real"), pend=null, sel=null, drag=null, lastPlumb={}, nextId=1;
 
-function hoseKey(){ return "hose:"+APP.probKey()+":"+store.get("btarget","base"); }
+function hoseKey(){ return "hose:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":""); }
 function saveHose(){ store.set(hoseKey(),{comps,hoses}); }
 function loadHose(){ const d=store.get(hoseKey(),null); comps=d?d.comps:[]; hoses=d?d.hoses:[]; nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; }
 
@@ -1423,6 +1495,8 @@ function sensMap(){
   const map={}, pts=detectPoints();
   comps.filter(c=>isSens(c.t)&&c.lab).forEach(c=>{ if(map[c.lab]) return; const d=T[c.t]; const cx=c.x+d.w/2, cy=c.y+d.h; const kind=c.t==="sensS"?"S":"LS";
     let best=null, bd=1e9; pts.filter(p=>p.kind===kind).forEach(p=>{ const dist=Math.hypot(p.x-cx,(p.y-cy)*0.7); if(dist<bd){ bd=dist; best=p; } });
+    c.dirBad=false;
+    if(best&&bd<75&&c.t==="sensLS"&&(c.dir||"R")!==(best.end===1?"R":"L")){ c.dirBad=true; c.det=null; return; }
     if(best&&bd<75) map[c.lab]=[best.role,best.end]; c.det=best&&bd<75?best:null; });
   return map;
 }
@@ -1453,6 +1527,10 @@ function analyze(){
   if(!src){ items.push([false,H?"파워유닛 없음":"서비스 유닛 없음","공급원을 먼저 배치하세요"]); sp.act.forEach(a=>plumb[a.id]="dead"); return {plumb,speed,items}; }
   const SRC=net(src,H?"P":"OUT"), TANK=H?net(src,"T"):null;
   const sup=trace(SRC,"supply");
+  const rvC=comps.find(c=>c.t==="relief"), suC=comps.find(c=>c.t==="su");
+  const supplyP=H?(rvC?rvC.set:7):(suC?suC.set:0);
+  const pAt=(path)=>{ let p=supplyP; (path||[]).forEach(e=>{ if(e.c.t==="prv"&&e.from==="IN") p=Math.min(p,e.c.set); }); return p; };
+  const okR=(v,t,tol)=>Math.abs(v-t)<=tol+1e-9;
   const checks=comps.filter(c=>c.t==="check");
   const toTank=(n)=>n===TANK||checks.some(ck=>net(ck,"IN")===n&&net(ck,"OUT")===TANK);
   // parts
@@ -1499,8 +1577,11 @@ function analyze(){
         if(e.c.t==="pcheck"&&e.from==="IN"&&!lines[a.id].capNets.includes(net(e.c,"X"))){ fw=0; notes.push("파일럿 X가 헤드측 라인에 연결되지 않아 체크밸브가 열리지 않습니다(전진 불가)"); } });
       pP.forEach(e=>{ if(e.c.t==="fcv2"||(e.c.t==="fcv1"&&e.from==="OUT")){ fw*=.5; bw*=.5; } });
       comps.filter(c=>c.t==="fcv2").forEach(c=>{ const n1=net(c,"IN"), n2=net(c,"OUT"); if((lines[a.id].capNets.includes(n1)&&toTank(n2))||(lines[a.id].capNets.includes(n2)&&toTank(n1))){ fw*=.6; used.add(c.id); } });
+      const lp=pAt(pP); lines[a.id].lp=lp; const pf=lp<(H?1.0:0.15)?0:Math.min(1,lp/(H?3.0:0.4)); fw*=pf; bw*=pf;
+      if(pf===0) notes.push(`공급 압력이 너무 낮아(${lp.toFixed(2)} MPa) 실린더가 움직이지 않습니다`);
+      rodPath.forEach(e=>{ if(e.c.t==="cbv"&&e.from==="OUT"&&e.c.set>=lp*0.95){ fw=0; notes.push(`카운터밸런스 설정압(${e.c.set.toFixed(1)} MPa)이 공급압(${lp.toFixed(1)} MPa)보다 높아 전진하지 못합니다`); } });
       if(plumb[a.id]==="rev"){ const t=fw; fw=bw; bw=t; }
-      speed[a.id]={f:fw,b:bw}; notes.forEach(n=>items.push([false,`${a.id} 파일럿 체크`,n]));
+      speed[a.id]={f:fw,b:bw}; notes.forEach(n=>items.push([false,`${a.id} 동작 조건`,n]));
     } else {
       const plan=motorPlan(a); const n1=net(ac,"M1"), n2=net(ac,"M2");
       if(plan.kind==="single"){
@@ -1532,9 +1613,16 @@ function analyze(){
     const rv=comps.find(c=>c.t==="relief"); const ok=rv&&sup.has(net(rv,"P"))&&toTank(net(rv,"T"));
     items.push([!!ok,"릴리프 밸브",rv?(ok?"공급 라인 P, 탱크 라인 T 연결 · 4±0.2 MPa 설정":"P는 공급 라인, T는 탱크 라인에 연결하세요"):"없음 — 최고압력을 설정할 수 없습니다"]);
     if(rv) used.add(rv.id);
+    if(rvC) items.push([okR(rvC.set,4,0.2),"최고압력 설정 (릴리프)",`현재 ${rvC.set.toFixed(1)} MPa — 요구 4±0.2 MPa`]);
     const g=comps.find(c=>c.t==="gauge"&&sup.has(net(c,"P")));
     items.push([!!g,"압력계 (공급 라인)",g?"공급 라인에서 압력 확인 가능":"공급 라인에 압력계를 연결하세요"]);
   }
+  if(!H&&suC) items.push([okR(suC.set,0.5,0.05),"작업압력 설정 (서비스 유닛)",`현재 ${suC.set.toFixed(2)} MPa — 요구 0.5±0.05 MPa`]);
+  // gauge readings
+  comps.filter(c=>c.t==="gauge").forEach(c=>{ const n=net(c,"P"); let r=null;
+    if(sup.has(n)) r=pAt(sup.get(n));
+    Object.values(lines).forEach(l=>{ if(r!==null) return; if(l.rodNets&&l.rodNets.includes(n)&&l.rodPath.some(e=>e.c.t==="cbv")) r=l.rodPath.find(e=>e.c.t==="cbv").c.set; else if(l.capNets&&l.capNets.includes(n)) r=l.lp; });
+    c.reading=r; });
   // ---- maintenance checks ----
   const m=mt(), has=(path,t,from)=>path&&path.some(e=>e.c.t===t&&(!from||e.from===from));
   const L=(id)=>lines[id];
@@ -1545,14 +1633,17 @@ function analyze(){
       if(id!=="*"&&!l){ add(false,`${id} 기본 배관부터 맞춰야 검사할 수 있습니다`); return; }
       if(k==="meterout"){ add(has(l.capPath,"fcv1","IN"),has(l.capPath,"fcv1","IN")?"헤드측 라인에 일방향 유량조절밸브 — 후진 배기 교축(미터아웃) · 후진 속도 50%":has(l.capPath,"fcv1","OUT")?"방향이 반대입니다(미터인이 됨): 밸브 쪽을 IN, 실린더 쪽을 OUT으로":"헤드측(후진 때 배기되는 쪽) 라인에 일방향 유량조절밸브를 넣으세요"); }
       if(k==="meterin"){ add(has(l.capPath,"fcv1","OUT"),has(l.capPath,"fcv1","OUT")?"헤드측 공급 라인 교축(미터인) · 전진 속도 50%":has(l.capPath,"fcv1","IN")?"방향이 반대입니다(미터아웃이 됨): 밸브 쪽을 OUT, 실린더 쪽을 IN으로":"헤드측(전진 공급) 라인에 일방향 유량조절밸브를 넣으세요"); }
+      if(k==="meterin_cb"){ const cb=l.rodPath.find(e=>e.c.t==="cbv"); if(cb) items.push([okR(cb.c.set,3,0.5),`카운터밸런스 설정 (${id})`,`현재 ${cb.c.set.toFixed(1)} MPa — 요구 3±0.5 MPa`]); }
       if(k==="meterin_cb"){ const a1=has(l.capPath,"fcv1","OUT"), a2=has(l.rodPath,"cbv","OUT"), g=gaugeOn(l.rodNets);
         add(a1&&a2&&!!g,[a1?"미터인 ✓":"헤드측 라인에 미터인(밸브 쪽 OUT)", a2?"로드측 카운터밸런스 ✓":"로드측 라인에 카운터밸런스(밸브 쪽 OUT, 실린더 쪽 IN)", g?"로드측 압력계 ✓ (3±0.5 MPa)":"로드측 라인에 분기 블록으로 압력계"].join(" · ")); }
       if(k==="qev"){ add(has(l.capPath,"qev","P"),has(l.capPath,"qev","P")?"헤드측에 급속배기밸브(P = 밸브 쪽, A = 실린더 쪽) · 후진 빨라짐":has(l.capPath,"qev","A")?"급속배기밸브 방향이 반대입니다":"헤드측 포트 가까이에 급속배기밸브를 넣으세요"); }
+      if(k==="reducing"){ const pr=l.pP.find(x=>x.c.t==="prv"); if(pr){ const tg=H?2:0.3, tol=H?0.5:0.05; items.push([okR(pr.c.set,tg,tol),`감압밸브 설정 (${id})`,`현재 ${pr.c.set.toFixed(2)} MPa — 요구 ${tg}±${tol} MPa`]); } }
       if(k==="reducing"){ const e=l.pP.find(x=>x.c.t==="prv"); const ok1=e&&e.from==="IN"; const after=ok1?l.pP.slice(l.pP.indexOf(e)).map(x=>x.net):[]; const g=!H||!!gaugeOn(after.concat([net(l.V,"P")]));
         add(ok1&&g,ok1?(g?`감압밸브 2차측 → ${id} 밸브 P · ${H?"압력계 ✓ 2±0.5 MPa":"0.3±0.05 MPa"}`:"감압밸브 2차측에 압력계를 다세요"):e?"감압밸브 방향이 반대입니다(IN = 공급 쪽)":`${id} 방향제어밸브 P라인 앞에 감압밸브를 넣으세요`); }
       if(k==="check"){ const ok=Object.values(lines).every(x=>x.pP.some(e=>e.c.t==="check")); add(ok,ok?"파워유닛 토출구 → 체크밸브 → 분배기 · 역류 방지":"파워유닛 P와 분배기 사이에 체크밸브(IN = 펌프 쪽)를 넣으세요"); }
       if(k==="lockA"||k==="lockB"){ const pc=l.rodPath.find(e=>e.c.t==="pcheck"); const okv=l.V.t==="v43abt", okp=pc&&pc.from==="IN", okx=pc&&l.capNets.includes(net(pc.c,"X"));
         add(okv&&okp&&okx,[okv?"4/3 A·B·T 접속 밸브 ✓":"방향제어밸브를 4/3 A·B·T 접속형으로", okp?"로드측 파일럿 체크 ✓":"로드측 라인에 파일럿 체크(IN = 밸브 쪽)", okx?"파일럿 X ← 헤드측 라인 ✓":"파일럿 X를 분기 블록으로 헤드측 라인에"].join(" · ")); }
+      if(k==="psB"){ const pc=gaugeOn(l.capNets,"ps"); if(pc){ items.push([okR(pc.set,3,0.5),"압력스위치 설정",`현재 ${pc.set.toFixed(1)} MPa — 요구 3±0.5 MPa${pc.set>=supplyP?" · 릴리프 압력보다 높아 절대 ON 되지 않습니다":""}`]); if(pc.set>=supplyP) plumb.__psOK=false; } }
       if(k==="psB"){ const ps=gaugeOn(l.capNets,"ps"), g=gaugeOn(l.capNets); add(!!ps&&!!g,(ps?"B 헤드측 라인 압력스위치 ✓":"B 헤드측(전진 공급) 라인에 분기 블록으로 압력스위치")+" · "+(g?"압력계 ✓ (3±0.5 MPa)":"같은 라인에 압력계")); }
       if(k==="biflow"){ const ok=has(l.pP,"fcv2"); add(ok,ok?`${id} 밸브 P라인에 양방향 유량조절 · 전·후진 50%`:`${id} 방향제어밸브 P(공급) 라인에 양방향 유량조절밸브를 넣으세요`); }
       if(k==="bleedoff"){ const c=comps.find(x=>x.t==="fcv2"&&((l.capNets.includes(net(x,"IN"))&&toTank(net(x,"OUT")))||(l.capNets.includes(net(x,"OUT"))&&toTank(net(x,"IN"))))); add(!!c,c?"A 헤드측 라인에서 분기 → 유량조절밸브 → 탱크 · 전진 속도 감소":"A 헤드측 공급 라인을 분기 블록으로 나눠 유량조절밸브를 거쳐 탱크로 보내세요"); }
@@ -1561,7 +1652,8 @@ function analyze(){
     if(open.length) items.push([false,"열린 포트",open.join(", ")+" — 유압이 걸리면 누유됩니다"]); }
   const smap=sensMap(), want=APP.simProb.sensors, endTxt=(a,e)=>`${a} ${e?"전진 끝":"후진 끝"}`;
   Object.keys(want).sort().forEach(s=>{ const got=smap[s], w=want[s]; const ok=got&&got[0]===w[0]&&got[1]===w[1];
-    items.push([!!ok,`센서 ${s}`,ok?`${endTxt(w[0],w[1])} 감지 위치 정상`:got?`${endTxt(got[0],got[1])}를 감지합니다 — ${endTxt(w[0],w[1])} 위치로 옮기세요`:comps.some(c=>isSens(c.t)&&c.lab===s)?`실린더 ${w[0]} ${w[1]?"전진 끝":"후진 끝"} 가까이에 놓으세요 (지금은 아무것도 감지 못함)`:`${s} 센서가 없습니다`]); });
+    const dirBad=comps.some(c=>c.lab===s&&c.dirBad);
+    items.push([!!ok,`센서 ${s}`,ok?`${endTxt(w[0],w[1])} 감지 위치 정상${/^LS/.test(s)?` · 롤러 방향 ${w[1]?"RIGHT(전진 쪽)":"LEFT(후진 쪽)"} 정상`:""}`:dirBad?`롤러 방향이 반대입니다 — ${w[1]?"전진 끝은 RIGHT":"후진 끝은 LEFT"} 방향으로 설치하세요 (리밋스위치는 방향성 고려)`:got?`${endTxt(got[0],got[1])}를 감지합니다 — ${endTxt(w[0],w[1])} 위치로 옮기세요`:comps.some(c=>isSens(c.t)&&c.lab===s)?`실린더 ${w[0]} ${w[1]?"전진 끝":"후진 끝"} 가까이에 놓으세요 (지금은 아무것도 감지 못함)`:`${s} 센서가 없습니다`]); });
   return {plumb,speed,items,smap};
 }
 
@@ -1624,6 +1716,13 @@ function solOverlay(c){
     o.push(`<rect x="${x}" y="${d.h-30}" width="28" height="16" rx="3" fill="${on?"#ffcf33":"rgba(255,255,255,.85)"}" stroke="${on?"#b8860b":"#888"}"/><text x="${x+14}" y="${d.h-18}" font-size="10" text-anchor="middle" font-weight="700" fill="#222">${y}</text>`); });
   return o.join("");
 }
+function setOverlay(c){
+  if(!c) return ""; const d=T[c.t];
+  if(d.adj&&c.set!==undefined) return `<rect x="${d.w/2-30}" y="-22" width="60" height="15" rx="3" fill="#0d1a12"/><text x="${d.w/2}" y="-11" font-size="10" text-anchor="middle" fill="#6ef08e" font-family="var(--mono)">${c.set.toFixed(c.t==="su"||(c.t==="prv"&&!isH())?2:1)} MPa</text>`;
+  if(c.t==="gauge") return `<text x="38" y="30" font-size="10" text-anchor="middle" font-weight="700" fill="#c22">${c.reading==null?"0.0":c.reading.toFixed(c.reading<1?2:1)}</text>`;
+  if(c.t==="sensLS") return `<text x="${d.w/2}" y="${d.h+21}" font-size="9" text-anchor="middle" font-weight="700" fill="${c.dirBad?"#c2410c":"#555"}">${(c.dir||"R")==="R"?"RIGHT →":"← LEFT"}</text>`;
+  return "";
+}
 function sensOverlay(c){
   if(!c||!isSens(c.t)) return ""; const d=T[c.t], on=c.lab&&APP.machine.sens&&APP.machine.sens[c.lab];
   return `<rect x="${d.w/2-20}" y="-18" width="40" height="16" rx="3" fill="${on?"#ffcf33":c.det?"#fff":"#fde9dc"}" stroke="${on?"#b8860b":"#888"}"/><text x="${d.w/2}" y="-6" font-size="10.5" text-anchor="middle" font-weight="700" fill="#222">${c.lab||"?"}</text>`;
@@ -1640,7 +1739,7 @@ function renderBoard(){
   o.push(`<defs><pattern id="gridp" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="var(--line)"/></pattern><linearGradient id="gSil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#b9c1c9"/><stop offset="1" stop-color="#e3e7eb"/></linearGradient></defs>`);
   o.push(`<rect width="1000" height="680" fill="url(#gridp)"/>`);
   comps.forEach(c=>{ const d=T[c.t];
-    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}`);
+    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c)}`);
     const lab=compLabel(c); if(lab) o.push(`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="var(--minus)">${lab}</text>`);
     o.push(`</g>`); });
   const pos=(k)=>{ const [id,p]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[p]; return [c.x+q[0],c.y+q[1]]; };
@@ -1654,7 +1753,9 @@ function renderBoard(){
   const sp=APP.simProb;
   $("plumbStat").innerHTML=sp.act.map(a=>{ const s=res.plumb[a.id], v=res.speed[a.id]; const sv=v&&(v.f!==1||v.b!==1)?` · 전진 ${Math.round(v.f*100)}% / 후진 ${Math.round(v.b*100)}%`:""; return `<span class="chip ${s==="ok"?"ok":"bad"}">${a.id}: ${s==="ok"?"정상 연결":s==="rev"?"반대 연결":"미연결/오류"}${sv}</span>`; }).join("")+`<span class="chip">호스 ${hoses.length}개 · 부품 ${comps.length}개</span>`;
   const sc=comps.find(c=>c.id===sel);
-  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""}${isSens(sc.t)?`<button class="btn small" id="bLab">이름: ${sc.lab||"?"} → 바꾸기</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 센서·리밋스위치는 실린더 끝 가까이에 놓으면 그 위치를 감지합니다.");
+  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""}${isSens(sc.t)?`<button class="btn small" id="bLab">이름: ${sc.lab||"?"} → 바꾸기</button>`:""}${sc.t==="sensLS"?`<button class="btn small" id="bDir">롤러 방향: ${(sc.dir||"R")==="R"?"RIGHT":"LEFT"} → 바꾸기</button>`:""}${T[sc.t].adj?`<span class="pill">설정 압력 <b class="mono">${sc.set.toFixed(2)} MPa</b></span><button class="btn small" id="bPm">−</button><button class="btn small" id="bPp">+</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 센서·리밋스위치는 실린더 끝 가까이에 놓으면 그 위치를 감지합니다.");
+  if(sc&&$("bDir")) $("bDir").onclick=()=>{ sc.dir=(sc.dir||"R")==="R"?"L":"R"; saveHose(); APP.resetMachine(); renderBoard(); };
+  if(sc&&$("bPm")){ const st=T[sc.t].adj.step, mx=T[sc.t].adj.max; const f=(d)=>{ sc.set=Math.max(0,Math.min(mx,Math.round((sc.set+d)/st)*st)); sc.set=+sc.set.toFixed(2); saveHose(); renderBoard(); }; $("bPm").onclick=()=>f(-st); $("bPp").onclick=()=>f(st); }
   if(sc&&$("bLab")) $("bLab").onclick=()=>{ const L=sensLabels(sc.t); const i=L.indexOf(sc.lab); sc.lab=L[(i+1)%L.length]; saveHose(); APP.resetMachine(); renderBoard(); };
   if(sc){ const r=$("bRole"); if(r) r.onclick=()=>{ sc.role=sc.role==="A"?"B":"A"; saveHose(); renderBoard(); }; $("bDel").onclick=()=>{ hoses=hoses.filter(h=>!h.a.startsWith(sc.id+".")&&!h.b.startsWith(sc.id+".")); comps=comps.filter(c=>c.id!==sc.id); sel=null; saveHose(); renderBoard(); }; }
 }
@@ -1670,6 +1771,8 @@ function addComp(t,x,y,role){
   const c={id:nextId++,t,x:px,y:py};
   if(t==="cyl"||t==="motor"){ c.role=role||(comps.some(q=>(q.t==="cyl"||q.t==="motor")&&q.role==="A")?"B":"A"); }
   if(isSens(t)){ const L=sensLabels(t); c.lab=role||L.find(l=>!comps.some(q=>q.lab===l))||L[0]; }
+  if(t==="sensLS") c.dir="R";
+  if(d.adj) c.set={su:0.3,relief:2.0,prv:isH()?4.0:0.5,cbv:1.0,ps:1.0}[t];
   comps.push(c); sel=c.id; saveHose(); renderBoard(); return c;
 }
 function svgPt(e){ const svg=$("board"); const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
@@ -1682,7 +1785,7 @@ $("board").addEventListener("pointerdown",e=>{
   const hh=e.target.closest(".hosehit");
   if(hh){ hoses.splice(+hh.dataset.h,1); saveHose(); APP.resetMachine(); renderBoard(); return; }
   const g=e.target.closest(".comp");
-  if(g){ const c=comps.find(x=>x.id===+g.dataset.cid); const p=svgPt(e); drag={c,dx:p.x-c.x,dy:p.y-c.y,moved:false}; sel=c.id; $("board").setPointerCapture(e.pointerId); renderBoard(); return; }
+  if(g){ const c=comps.find(x=>x.id===+g.dataset.cid); const p=svgPt(e); drag={c,dx:p.x-c.x,dy:p.y-c.y,moved:false}; sel=c.id; try{ $("board").setPointerCapture(e.pointerId); }catch(_){} renderBoard(); return; }
   sel=null; pend=null; renderBoard();
 });
 function isBusPort(){ return false; }
@@ -1729,7 +1832,8 @@ $("bModel").onclick=()=>{
       if(plan.kind==="single"){ const v=addComp(plan.vt[0],x0+20,330); const ck=addComp("check",x0+190,120); link(P(v,"A"),P(mo,"M1")); link(P(mo,"M2"),P(ck,"IN")); link(P(ck,"OUT"),tankKey()); link(P(v,"P"),supKey()); if(v.t==="v42s") link(P(v,"T"),tankKey()); }
       else { const v=addComp("v42s",x0+20,300); const r=addComp("v22",x0+220,420); link(P(v,"A"),P(mo,"M2")); link(P(v,"B"),P(mo,"M1")); link(P(r,"A"),P(v,"P")); link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
   });
-  Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); });
+  Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; const sc2=addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); if(t==="sensLS") sc2.dir=end===1?"R":"L"; });
+  comps.forEach(c=>{ if(T[c.t].adj) c.set={su:0.5,relief:4.0,prv:H?2.0:0.3,cbv:3.0,ps:3.0}[c.t]; });
   sel=null; saveHose(); APP.resetMachine(); renderBoard(); $("bCheck").onclick();
 };
 $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); if(!b2) return; store.set("btarget",b2.dataset.t); APP.load(); });
@@ -1738,7 +1842,7 @@ $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); 
    2. WIRING BOARD (photo of the ED trainer units)
    ===================================================================== */
 let wires=[], wcol=store.get("wcol","r"), wpend=null, useWire=true, wzoom=store.get("wzoom",0.6);
-const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base");
+const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":"");
 function saveWire(){ store.set(wKey(),wires); netCache=null; }
 function loadWire(){ wires=store.get(wKey(),[]); netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
@@ -1927,7 +2031,7 @@ function renderWire(){
   const hb=[`<g transform="translate(${HX},${HY}) scale(${HS})"><rect x="-10" y="-10" width="1020" height="700" rx="10" fill="#f6f8fa" stroke="#c4cbd2"/><text x="6" y="10" font-size="13" font-weight="700" fill="#5b6876">배관 회로도 (부품 배치·배관 탭에서 꾸민 그대로) — 솔레노이드·센서 단자에 전선을 꽂으세요</text>`];
   const pp=(k)=>{ const [id,pt]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[pt]; return [c.x+q[0],c.y+q[1]]; };
   hoses.forEach(h=>{ const a=pp(h.a), c2=pp(h.b); if(!a||!c2) return; hb.push(`<path d="M${a[0]} ${a[1]} C${a[0]} ${a[1]+50} ${c2[0]} ${c2[1]+50} ${c2[0]} ${c2[1]}" fill="none" stroke="#7d8690" stroke-width="2.6" opacity=".75"/>`); });
-  comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
+  comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
   if(!comps.length) hb.push(`<text x="500" y="340" font-size="22" text-anchor="middle" fill="#8a939c">먼저 「배관」 탭에서 부품을 배치하세요 (또는 모범 배관 보기)</text>`);
   hb.push(`</g>`); $("whose").innerHTML=hb.join("");
   const o=[];
@@ -1957,7 +2061,9 @@ let wSig="";
 function wireTick(){ if(APP.mode!=="build"||$("tabWire").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.relay,m.inp,m.coil,m.sens,m.cnt,m.timer.T1&&Math.round(m.timer.T1.acc/100),wires.length,wpend,useWire,m.short]); if(sig!==wSig){ wSig=sig; renderWire(); drawRef(); } requestAnimationFrame(wireTick); }
 let annCache=null, annFor=null;
 $("refBox").addEventListener("toggle",()=>drawRef());
-function drawRef(){ if($("refBox").open===false) return; if(annFor!==APP.curL){ annFor=APP.curL; annCache=compile(APP.curL).ann; } APP.drawLadder("ladRef",annCache); }
+function drawRef(){ if($("refBox").open===false) return;
+  if(APP.mock){ if(store.get("btarget","base")==="maint"){ $("ladRef").innerHTML=""; $("refNote").innerHTML="모의시험: 유지보수 회로는 문제지 계획을 보고 직접 설계합니다 (아래 문제지 요약 참고)"; return; } $("refNote").textContent="모의시험: 문제지 회로도 그대로입니다 — 오류를 찾아 고친 회로대로 배선하세요"; APP.drawLadder("ladRef",null); return; }
+  $("refNote").textContent=""; if(annFor!==APP.curL){ annFor=APP.curL; annCache=compile(APP.curL).ann; } APP.drawLadder("ladRef",annCache); }
 
 $("wboard").addEventListener("pointerdown",e=>{
   const b=e.target.closest(".wbtn"); const m=APP.machine;
@@ -1975,7 +2081,7 @@ $("wTarget").addEventListener("click",e=>{ const b=e.target.closest("button"); i
 $("wClear").onclick=()=>{ wires=[]; saveWire(); APP.resetMachine(); wSig=""; $("wRes").innerHTML=""; };
 $("wModel").onclick=()=>{ const r=compile(APP.curL); wires=r.ws; saveWire(); APP.resetMachine(); wSig=""; $("wRes").innerHTML=r.notes.length?`<div class="note">${r.notes.join("<br>")}</div>`:""; renderAlloc(); };
 $("wZoom").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; wzoom=+b.dataset.z; store.set("wzoom",wzoom); document.querySelectorAll("#wZoom button").forEach(x=>x.setAttribute("aria-pressed",+x.dataset.z===wzoom)); buildUnits(); wSig=""; });
-$("wCheck").onclick=()=>{ $("wRes").innerHTML=wireCheck().map(([ok,t,d])=>APP.item(ok,t,d)).join(""); };
+$("wCheck").onclick=()=>{ const r=wireCheck(); $("wRes").innerHTML=r.map(([ok,t,d])=>APP.item(ok,t,d)).join(""); if(!APP.mock&&r.every(x=>x[0])) APP.markDone(store.get("btarget","base")==="maint"?"buildM":"build"); };
 function renderAlloc(){
   const r=compile(APP.curL); const rows=Object.entries(r.alloc).filter(([l])=>/^K/.test(l)).sort();
   $("relTab").innerHTML=`<tr><th>릴레이</th><th>유닛 위치</th><th>사용 접점</th><th>판정</th></tr>`+rows.map(([l,n])=>{ const k=+l.slice(1); return `<tr><td class="n">${l}</td><td>Relay Unit ${Math.ceil(k/3)} · RY${(k-1)%3+1}</td><td class="n">${n} / 4조</td><td>${n>4?"점프 필요":"충분"}</td></tr>`; }).join("");
@@ -2000,6 +2106,7 @@ window.BUILD={
     wSig=""; hSig=""; if(t==="wire") requestAnimationFrame(wireTick); else requestAnimationFrame(hoseTick);
   },
   hoseList(){ return hoses; }, setHoses(h){ hoses=h; saveHose(); APP.resetMachine(); renderBoard(); },
+  evaluate(){ buildUnits(); const h=analyze().items; const w=wireCheck().filter(x=>!(x[1]==="배관·센서 먼저 확인")); return h.concat(w); },
   compile, makeNetEval, buildUnits, get wires(){return wires}, set wires(v){wires=v;netCache=null;}
 };
 })();
