@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>공유압 회로 시뮬레이터</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="author" content="한국폴리텍대학 진주캠퍼스 자동화과 장성욱">
@@ -117,6 +118,7 @@ ul.req{margin:0;padding-left:18px;font-size:13px;display:flex;flex-direction:col
 #board{display:block;touch-action:none;user-select:none}
 #board .port{cursor:crosshair}
 #board .comp{cursor:grab}
+#board .adjb{cursor:pointer}#board .adjb:hover rect{fill:#dbeafe}
 #wboard .hosehit{stroke:transparent;stroke-width:12;cursor:pointer;fill:none}
 #wboard .jack{cursor:crosshair}
 #board .hosehit{stroke:transparent;stroke-width:12;cursor:pointer;fill:none}
@@ -1668,8 +1670,8 @@ function partArt(t,w,h,sym,c){
   const label=(txt,y)=>o.push(`<text x="${w/2}" y="${y}" font-size="9" text-anchor="middle" fill="${sym?"var(--muted)":"#4a525b"}" font-family="var(--mono)">${esc(txt)}</text>`);
   if(sym){ // ISO-like symbols
     const st=`stroke="var(--ink)" stroke-width="1.4" fill="none"`;
-    if(t==="cyl"){ const ps=20+pos(c)*120; o.push(`<rect x="14" y="14" width="140" height="30" ${st} fill="var(--card)"/><line x1="${ps}" y1="14" x2="${ps}" y2="44" stroke="var(--ink)" stroke-width="3"/><line x1="${ps}" y1="29" x2="${ps+176}" y2="29" stroke="var(--ink)" stroke-width="4"/>`); }
-    else if(t==="motor"){ o.push(`<circle cx="66" cy="42" r="28" ${st} fill="var(--card)"/><path d="M60 16 l6 9 l6-9z M60 68 l6-9 l6 9z" fill="var(--ink)"/><path d="M40 20 a34 34 0 0 1 52 0" ${st}/><line x1="18" y1="22" x2="56" y2="22" stroke="var(--ink)"/><line x1="18" y1="62" x2="56" y2="62" stroke="var(--ink)"/>`); }
+    if(t==="cyl"){ const ps=20+pos(c)*120, cid=c?c.id:0; o.push(`<rect x="14" y="14" width="140" height="30" ${st} fill="var(--card)"/><g id="an${cid}" data-k="cyls" transform="translate(${ps-20} 0)"><line x1="20" y1="14" x2="20" y2="44" stroke="var(--ink)" stroke-width="3"/><line x1="20" y1="29" x2="196" y2="29" stroke="var(--ink)" stroke-width="4"/></g>`); }
+    else if(t==="motor"){ const cid=c?c.id:0; o.push(`<circle cx="66" cy="42" r="28" ${st} fill="var(--card)"/><g id="an${cid}" data-k="mot" data-cx="66" data-cy="42" transform="rotate(${ang(c)} 66 42)"><line x1="66" y1="42" x2="66" y2="22" stroke="#c22" stroke-width="2.5"/><circle cx="66" cy="22" r="2.5" fill="#c22"/></g><path d="M60 16 l6 9 l6-9z M60 68 l6-9 l6 9z" fill="var(--ink)"/><path d="M40 20 a34 34 0 0 1 52 0" ${st}/><line x1="18" y1="22" x2="56" y2="22" stroke="var(--ink)"/><line x1="18" y1="62" x2="56" y2="62" stroke="var(--ink)"/>`); }
     else if(/^v/.test(t)){ const pos=T[t].pos||2, bw=34, x0=(w-pos*bw)/2, y0=28;
       for(let i=0;i<pos;i++) o.push(`<rect x="${x0+i*bw}" y="${y0}" width="${bw}" height="40" ${st} fill="var(--card)"/>`);
       const bx=(i)=>x0+i*bw;
@@ -1697,8 +1699,8 @@ function partArt(t,w,h,sym,c){
     return o.join("");
   }
   // real-ish module look (aluminium sub-plates, black bodies, metal fittings)
-  if(t==="cyl"){ const ex=pos(c)*110; o.push(`<rect x="4" y="18" width="${w-50}" height="34" rx="3" fill="url(#gSil)" stroke="#7d8690"/><rect x="4" y="12" width="40" height="46" rx="3" fill="${BODY}"/><rect x="${w-90}" y="12" width="40" height="46" rx="3" fill="${BODY}"/><rect x="${w-50}" y="31" width="${34+ex}" height="8" fill="${MET}"/><rect x="${w-20+ex}" y="25" width="18" height="20" rx="8" fill="${MET2}"/><rect x="24" y="52" width="10" height="8" rx="2" fill="#e8742b"/>`); label("DOUBLE ACTING CYLINDER",42); }
-  else if(t==="motor"){ const an=ang(c)*Math.PI/180; o.push(`<rect x="2" y="4" width="${w-4}" height="${h-8}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="34" y="12" width="64" height="60" rx="8" fill="${BODY}"/><circle cx="108" cy="42" r="12" fill="${MET}"/><line x1="108" y1="42" x2="${108+10*Math.cos(an)}" y2="${42+10*Math.sin(an)}" stroke="#c22" stroke-width="3"/><text x="66" y="46" font-size="9" text-anchor="middle" fill="#cfd5db" font-family="var(--mono)">MOTOR</text>`); }
+  if(t==="cyl"){ const ex=pos(c)*110; o.push(`<rect x="4" y="18" width="${w-50}" height="34" rx="3" fill="url(#gSil)" stroke="#7d8690"/><rect x="4" y="12" width="40" height="46" rx="3" fill="${BODY}"/><rect x="${w-90}" y="12" width="40" height="46" rx="3" fill="${BODY}"/><rect id="ar${c?c.id:0}" x="${w-50}" y="31" width="${34+ex}" height="8" fill="${MET}"/><g id="an${c?c.id:0}" transform="translate(${ex} 0)"><rect x="${w-20}" y="25" width="18" height="20" rx="8" fill="${MET2}"/></g><rect x="24" y="52" width="10" height="8" rx="2" fill="#e8742b"/>`); label("DOUBLE ACTING CYLINDER",42); }
+  else if(t==="motor"){ const an=ang(c)*Math.PI/180; o.push(`<rect x="2" y="4" width="${w-4}" height="${h-8}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="34" y="12" width="64" height="60" rx="8" fill="${BODY}"/><circle cx="108" cy="42" r="13" fill="${MET}" stroke="#7d8690"/><g id="an${c?c.id:0}" data-k="mot" data-cx="108" data-cy="42" transform="rotate(${ang(c)} 108 42)"><line x1="108" y1="42" x2="108" y2="30" stroke="#c22" stroke-width="3" stroke-linecap="round"/><line x1="98" y1="42" x2="118" y2="42" stroke="#555" stroke-width="2"/><circle cx="108" cy="42" r="3" fill="#333"/></g><text x="66" y="46" font-size="9" text-anchor="middle" fill="#cfd5db" font-family="var(--mono)">MOTOR</text>`); }
   else if(/^v/.test(t)){ const two=T[t].sol===2; o.push(`<rect x="2" y="2" width="${w-4}" height="${h-4}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="${two?30:22}" y="30" width="${w-(two?60:44)}" height="38" rx="3" fill="${BODY}"/><rect x="${w/2-26}" y="36" width="52" height="26" fill="#f7f8f9"/><text x="${w/2}" y="53" font-size="10" text-anchor="middle" fill="#222" font-family="var(--mono)">${t==="v22"?"2/2":t.startsWith("v52")?"5/2":t.startsWith("v43")?"4/3":"4/2"}</text><rect x="4" y="32" width="${two?26:18}" height="34" rx="3" fill="#111"/>`);
     if(two) o.push(`<rect x="${w-30}" y="32" width="26" height="34" rx="3" fill="#111"/>`); else o.push(`<rect x="${w-22}" y="38" width="18" height="22" rx="2" fill="${MET2}"/>`);
     if(t.startsWith("v52")) o.push(`<rect x="40" y="80" width="14" height="10" rx="2" fill="#555"/><rect x="96" y="80" width="14" height="10" rx="2" fill="#555"/>`);
@@ -1720,9 +1722,11 @@ function solOverlay(c){
     o.push(`<rect x="${x}" y="${d.h-30}" width="28" height="16" rx="3" fill="${on?"#ffcf33":"rgba(255,255,255,.85)"}" stroke="${on?"#b8860b":"#888"}"/><text x="${x+14}" y="${d.h-18}" font-size="10" text-anchor="middle" font-weight="700" fill="#222">${y}</text>`); });
   return o.join("");
 }
-function setOverlay(c){
+function setOverlay(c,ro){
   if(!c) return ""; const d=T[c.t];
-  if(d.adj&&c.set!==undefined) return `<rect x="${d.w/2-30}" y="-22" width="60" height="15" rx="3" fill="#0d1a12"/><text x="${d.w/2}" y="-11" font-size="10" text-anchor="middle" fill="#6ef08e" font-family="var(--mono)">${c.set.toFixed(c.t==="su"||(c.t==="prv"&&!isH())?2:1)} MPa</text>`;
+  if(d.adj&&c.set!==undefined){ const x0=d.w/2-56, v=(c.set??0).toFixed(c.t==="su"||(c.t==="prv"&&!isH())?2:1);
+    if(ro) return `<rect x="${d.w/2-30}" y="-22" width="60" height="15" rx="3" fill="#0d1a12"/><text x="${d.w/2}" y="-11" font-size="10" text-anchor="middle" fill="#6ef08e" font-family="var(--mono)">${v} MPa</text>`;
+    return `<g class="adjw"><g class="adjb" data-cid="${c.id}" data-d="-1"><rect x="${x0}" y="-30" width="26" height="24" rx="5" fill="#fff" stroke="#2563eb" stroke-width="1.6"/><text x="${x0+13}" y="-12" font-size="18" font-weight="700" text-anchor="middle" fill="#2563eb">−</text></g><rect x="${x0+28}" y="-30" width="56" height="24" rx="4" fill="#0d1a12"/><text x="${x0+56}" y="-14" font-size="11" text-anchor="middle" fill="#6ef08e" font-family="var(--mono)">${v} MPa</text><g class="adjb" data-cid="${c.id}" data-d="1"><rect x="${x0+86}" y="-30" width="26" height="24" rx="5" fill="#fff" stroke="#2563eb" stroke-width="1.6"/><text x="${x0+99}" y="-12" font-size="18" font-weight="700" text-anchor="middle" fill="#2563eb">+</text></g></g>`; }
   if(c.t==="gauge") return `<text x="38" y="30" font-size="10" text-anchor="middle" font-weight="700" fill="#c22">${c.reading==null?"0.0":c.reading.toFixed(c.reading<1?2:1)}</text>`;
   if(c.t==="sensLS") return `<text x="${d.w/2}" y="${d.h+21}" font-size="9" text-anchor="middle" font-weight="700" fill="${c.dirBad?"#c2410c":"#555"}">${(c.dir||"R")==="R"?"RIGHT →":"← LEFT"}</text>`;
   return "";
@@ -1743,7 +1747,7 @@ function renderBoard(){
   o.push(`<defs><pattern id="gridp" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="var(--line)"/></pattern><linearGradient id="gSil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#b9c1c9"/><stop offset="1" stop-color="#e3e7eb"/></linearGradient></defs>`);
   o.push(`<rect width="1000" height="680" fill="url(#gridp)"/>`);
   comps.forEach(c=>{ const d=T[c.t];
-    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c)}`);
+    o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}${T[c.t].adj?"":setOverlay(c)}`);
     const lab=compLabel(c); if(lab) o.push(`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="var(--minus)">${lab}</text>`);
     o.push(`</g>`); });
   const pos=(k)=>{ const [id,p]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[p]; return [c.x+q[0],c.y+q[1]]; };
@@ -1752,14 +1756,15 @@ function renderBoard(){
     o.push(`<path class="hosehit" data-h="${i}" d="${dd}"/><path class="hose" d="${dd}" fill="none" stroke="${view==="sym"?"var(--plus)":col}" stroke-width="${view==="sym"?2:3.4}" stroke-linecap="round" pointer-events="none"/>`); });
   comps.forEach(c=>{ Object.entries(T[c.t].ports).forEach(([p,q])=>{ const x=c.x+q[0], y=c.y+q[1], k=c.id+"."+p, on=pend===k, used=hoses.some(h=>h.a===k||h.b===k);
     o.push(`<g class="port" data-k="${k}"><circle cx="${x}" cy="${y}" r="${view==="sym"?5:7.5}" fill="${view==="sym"?(used?"var(--plus)":"var(--card)"):MET}" stroke="${on?"var(--minus)":view==="sym"?"var(--ink)":"#555"}" stroke-width="${on?3:1.4}"/>${view==="sym"?"":`<circle cx="${x}" cy="${y}" r="3" fill="${used?"var(--plus)":"#3a3f45"}"/>`}<text x="${x+9}" y="${y-6}" font-size="9.5" font-weight="600" fill="var(--ink)">${p}</text></g>`); }); });
+  comps.forEach(c=>{ if(T[c.t].adj) o.push(`<g transform="translate(${c.x},${c.y})">${setOverlay(c)}</g>`); }); // top layer: pressure −/+ above hoses
   $("board").innerHTML=o.join("");
   // status chips
   const sp=APP.simProb;
   $("plumbStat").innerHTML=sp.act.map(a=>{ const s=res.plumb[a.id], v=res.speed[a.id]; const sv=v&&(v.f!==1||v.b!==1)?` · 전진 ${Math.round(v.f*100)}% / 후진 ${Math.round(v.b*100)}%`:""; return `<span class="chip ${s==="ok"?"ok":"bad"}">${a.id}: ${s==="ok"?"정상 연결":s==="rev"?"반대 연결":"미연결/오류"}${sv}</span>`; }).join("")+`<span class="chip">호스 ${hoses.length}개 · 부품 ${comps.length}개</span>`;
   const sc=comps.find(c=>c.id===sel);
-  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""}${isSens(sc.t)?`<button class="btn small" id="bLab">이름: ${sc.lab||"?"} → 바꾸기</button>`:""}${sc.t==="sensLS"?`<button class="btn small" id="bDir">롤러 방향: ${(sc.dir||"R")==="R"?"RIGHT":"LEFT"} → 바꾸기</button>`:""}${T[sc.t].adj?`<span class="pill">설정 압력 <b class="mono">${sc.set.toFixed(2)} MPa</b></span><button class="btn small" id="bPm">−</button><button class="btn small" id="bPp">+</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 센서·리밋스위치는 실린더 끝 가까이에 놓으면 그 위치를 감지합니다.");
+  $("selInfo").innerHTML=sc?`선택: <b>${T[sc.t].n}</b> ${sc.t==="cyl"||sc.t==="motor"?`<button class="btn small" id="bRole">이름 → ${sc.role==="A"?"B":"A"}</button>`:""}${isSens(sc.t)?`<button class="btn small" id="bLab">이름: ${sc.lab||"?"} → 바꾸기</button>`:""}${sc.t==="sensLS"?`<button class="btn small" id="bDir">롤러 방향: ${(sc.dir||"R")==="R"?"RIGHT":"LEFT"} → 바꾸기</button>`:""}${T[sc.t].adj?`<span class="pill">설정 압력 <b class="mono">${(sc.set??0).toFixed(2)} MPa</b></span><button class="btn small" id="bPm">−</button><button class="btn small" id="bPp">+</button>`:""} <button class="btn small" id="bDel">삭제</button>`:(pend?"연결할 두 번째 포트를 누르세요 (같은 포트를 다시 누르면 취소)":"부품은 끌어서 옮기고, 포트를 두 번 차례로 누르면 호스가 연결됩니다. 센서·리밋스위치는 실린더 끝 가까이에 놓으면 그 위치를 감지합니다. 압력은 부품 위의 <b>− / +</b> 버튼으로 맞춥니다.");
   if(sc&&$("bDir")) $("bDir").onclick=()=>{ sc.dir=(sc.dir||"R")==="R"?"L":"R"; saveHose(); APP.resetMachine(); renderBoard(); };
-  if(sc&&$("bPm")){ const st=T[sc.t].adj.step, mx=T[sc.t].adj.max; const f=(d)=>{ sc.set=Math.max(0,Math.min(mx,Math.round((sc.set+d)/st)*st)); sc.set=+sc.set.toFixed(2); saveHose(); renderBoard(); }; $("bPm").onclick=()=>f(-st); $("bPp").onclick=()=>f(st); }
+  if(sc&&$("bPm")){ const st=T[sc.t].adj.step, mx=T[sc.t].adj.max; $("bPm").onclick=()=>stepSet(sc,-1); $("bPp").onclick=()=>stepSet(sc,1); }
   if(sc&&$("bLab")) $("bLab").onclick=()=>{ const L=sensLabels(sc.t); const i=L.indexOf(sc.lab); sc.lab=L[(i+1)%L.length]; saveHose(); APP.resetMachine(); renderBoard(); };
   if(sc){ const r=$("bRole"); if(r) r.onclick=()=>{ sc.role=sc.role==="A"?"B":"A"; saveHose(); renderBoard(); }; $("bDel").onclick=()=>{ hoses=hoses.filter(h=>!h.a.startsWith(sc.id+".")&&!h.b.startsWith(sc.id+".")); comps=comps.filter(c=>c.id!==sc.id); sel=null; saveHose(); renderBoard(); }; }
 }
@@ -1780,7 +1785,10 @@ function addComp(t,x,y,role){
   comps.push(c); sel=c.id; saveHose(); renderBoard(); return c;
 }
 function svgPt(e){ const svg=$("board"); const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+function stepSet(c,dir){ const st=T[c.t].adj.step, mx=T[c.t].adj.max; c.set=Math.max(0,Math.min(mx,Math.round(((c.set??0)+dir*st)/st)*st)); c.set=+c.set.toFixed(2); saveHose(); renderBoard(); }
 $("board").addEventListener("pointerdown",e=>{
+  const ab=e.target.closest(".adjb");
+  if(ab){ const c=comps.find(x=>x.id===+ab.dataset.cid); if(c){ sel=c.id; stepSet(c,+ab.dataset.d); } e.preventDefault(); return; }
   const port=e.target.closest(".port");
   if(port){ const k=port.dataset.k;
     if(!pend){ pend=k; } else if(pend===k){ pend=null; }
@@ -2035,7 +2043,7 @@ function renderWire(){
   const hb=[`<g transform="translate(${HX},${HY}) scale(${HS})"><rect x="-10" y="-10" width="1020" height="700" rx="10" fill="#f6f8fa" stroke="#c4cbd2"/><text x="6" y="10" font-size="13" font-weight="700" fill="#5b6876">배관 회로도 (부품 배치·배관 탭에서 꾸민 그대로) — 솔레노이드·센서 단자에 전선을 꽂으세요</text>`];
   const pp=(k)=>{ const [id,pt]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[pt]; return [c.x+q[0],c.y+q[1]]; };
   hoses.forEach(h=>{ const a=pp(h.a), c2=pp(h.b); if(!a||!c2) return; hb.push(`<path d="M${a[0]} ${a[1]} C${a[0]} ${a[1]+50} ${c2[0]} ${c2[1]+50} ${c2[0]} ${c2[1]}" fill="none" stroke="#7d8690" stroke-width="2.6" opacity=".75"/>`); });
-  comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
+  comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c,1)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
   if(!comps.length) hb.push(`<text x="500" y="340" font-size="22" text-anchor="middle" fill="#8a939c">먼저 「배관」 탭에서 부품을 배치하세요 (또는 모범 배관 보기)</text>`);
   hb.push(`</g>`); $("whose").innerHTML=hb.join("");
   const o=[];
@@ -2060,9 +2068,12 @@ function renderWire(){
   $("wStat").innerHTML=`<span class="chip">전선 ${wires.length}개</span>`+(useWire?`<span class="chip ${m.short?"bad":wires.length?"ok":"bad"}">${m.short?"단락!":wires.length?"내 배선으로 동작 중":"배선 없음 — 움직이지 않습니다"}</span>`:`<span class="chip">래더 회로로 동작 중</span>`)+(wpend?`<span class="chip">선택: ${esc(wpend)} → 연결할 단자를 누르세요</span>`:"");
 }
 let hSig="";
-function hoseTick(){ if(APP.mode!=="build"||$("tabHose").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.pos&&Object.values(m.pos).map(v=>Math.round(v*60)),m.sol,m.angle&&Object.values(m.angle).map(v=>Math.round(v/15))]); if(sig!==hSig&&!drag){ hSig=sig; renderBoard(); } requestAnimationFrame(hoseTick); }
+function hoseTick(){ if(APP.mode!=="build"||$("tabHose").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.sol,m.sens,m.pos&&Object.values(m.pos).map(v=>v<=0.001?0:v>=0.999?2:1)]); if(sig!==hSig&&!drag){ hSig=sig; renderBoard(); } else animBoard(); requestAnimationFrame(hoseTick); }
+function animBoard(B0){ const B=B0||$("board"), sym=!B0&&view==="sym"; comps.forEach(c=>{ if(c.t!=="cyl"&&c.t!=="motor") return; const g=B.querySelector("#an"+c.id); if(!g) return;
+  if(c.t==="motor") g.setAttribute("transform",`rotate(${ang(c).toFixed(1)} ${g.dataset.cx} ${g.dataset.cy})`);
+  else { const ex=pos(c)*(sym?120:110); g.setAttribute("transform",`translate(${ex.toFixed(1)} 0)`); const r=B.querySelector("#ar"+c.id); if(r) r.setAttribute("width",(34+ex).toFixed(1)); } }); }
 let wSig="";
-function wireTick(){ if(APP.mode!=="build"||$("tabWire").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.relay,m.inp,m.coil,m.sens,m.cnt,m.timer.T1&&Math.round(m.timer.T1.acc/100),wires.length,wpend,useWire,m.short]); if(sig!==wSig){ wSig=sig; renderWire(); drawRef(); } requestAnimationFrame(wireTick); }
+function wireTick(){ if(APP.mode!=="build"||$("tabWire").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.relay,m.inp,m.coil,m.sens,m.cnt,m.timer.T1&&Math.round(m.timer.T1.acc/100),wires.length,wpend,useWire,m.short]); if(sig!==wSig){ wSig=sig; renderWire(); drawRef(); } else animBoard($("whose")); requestAnimationFrame(wireTick); }
 let annCache=null, annFor=null;
 $("refBox").addEventListener("toggle",()=>drawRef());
 function drawRef(){ if($("refBox").open===false) return;
