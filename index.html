@@ -1866,7 +1866,7 @@ $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); 
    ===================================================================== */
 let wires=[], wcol=store.get("wcol","r"), wpend=null, useWire=true, wzoom=store.get("wzoom",0.6);
 const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":"");
-function saveWire(){ store.set(wKey(),wires); netCache=null; }
+function saveWire(){ store.set(wKey(),wires); netCache=null; if(useWire&&APP.machine&&APP.mode==="build"){ APP.machine.netEval=currentNetEval(); wSig=""; } }
 function loadWire(){ const w=store.get(wKey(),[]); wires=Array.isArray(w)?w.filter(x=>x&&x.a&&x.b):[]; netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
 let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=700, HS=1.9;
