@@ -268,7 +268,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
         <div class="boardbox fit"><svg id="wboard"></svg></div><div class="small" style="margin-top:-4px;color:var(--muted)">빈 곳을 끌면 화면이 움직이고, 마우스 휠(태블릿은 두 손가락)로 확대·축소합니다.</div>
         
         <div class="res" id="wRes"></div>
-        <div style="overflow-x:auto"><table class="rtab" id="relTab"></table></div>
+        <table id="relTab" hidden></table>
         <div class="seg" id="wUse" hidden><button data-u="1" aria-pressed="true">내 배선</button><button data-u="0">래더</button></div>
         <div class="seg" id="wTarget" hidden><button data-t="base">기본</button><button data-t="maint">유지보수</button></div>
       </div>
@@ -1855,8 +1855,11 @@ const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?
 function saveWire(){ store.set(wKey(),wires); netCache=null; }
 function loadWire(){ const w=store.get(wKey(),[]); wires=Array.isArray(w)?w.filter(x=>x&&x.a&&x.b):[]; netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
-let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=650, HS=1.9;
+let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=700, HS=1.9;
 const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b) return u; return null; };
+function modLabels(){ const N={ES:["비상정지 모듈","#c2410c"],DC:["전원 모듈","#374151"],SG1:["스위치 모듈 1","#15803d"],SG2:["스위치 모듈 2","#15803d"],RY1:["릴레이 모듈 1","#1d4ed8"],RY2:["릴레이 모듈 2","#1d4ed8"],RY3:["릴레이 모듈 3","#1d4ed8"],TM:["타이머 모듈","#7c3aed"],CT:["카운터 모듈","#b45309"],LP:["램프 모듈","#be123c"]};
+  return `<g id="wmods" pointer-events="none">`+Object.entries(HOT.units).map(([u,[a,b]])=>{ const n=N[u]; if(!n) return ""; const cx=(a+b)/2, y=HOT.H+8, tw=Math.min(b-a-16,n[0].length*30+40);
+    return `<path d="M${a+6} ${y} v12 H${b-6} v-12" fill="none" stroke="${n[1]}" stroke-width="4"/><rect x="${cx-tw/2}" y="${y+18}" width="${tw}" height="44" rx="22" fill="${n[1]}"/><text x="${cx}" y="${y+50}" font-size="28" font-weight="700" text-anchor="middle" fill="#fff">${n[0]}</text>`; }).join("")+`</g>`; }
 function buildUnits(){
   JACK={}; SW=[]; LOADS=[]; SENS=[]; GROUPS=[];
   Object.entries(PJ.J).forEach(([id,j])=>JACK[id]={id,x:j.x,y:j.y,kind:j.k,lab:j.lab});
@@ -1887,7 +1890,7 @@ function buildUnits(){
   const W=Math.max(HOT.W,HX+1000*HS+20), Hh=HY+680*HS+20;
   const svg=$("wboard"); WB.W=W; WB.H=Hh; svg.removeAttribute("width"); svg.removeAttribute("height"); if(!vb) vbPreset("L"); else applyVB();
   netCache=null;
-  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/><image id="wimg" href="${window.PANELIMG}" x="0" y="0" width="${HOT.W}" height="${HOT.H}" preserveAspectRatio="none"/><g id="whose"></g><g id="wdyn"></g>`;
+  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/><image id="wimg" href="${window.PANELIMG}" x="0" y="0" width="${HOT.W}" height="${HOT.H}" preserveAspectRatio="none"/><g id="whose"></g><g id="wdyn"></g>${modLabels()}`;
 }
 
 // ---------- netlist evaluation ----------
