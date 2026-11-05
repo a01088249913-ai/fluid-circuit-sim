@@ -76,6 +76,10 @@ svg text{font-family:var(--mono)}
 #ladder{display:block}
 #ladder .hit{cursor:pointer;fill:transparent}
 #ladder .hit:hover{fill:var(--liveSoft);opacity:.6}
+body[data-mtool="par"] #ladder .hit:hover{fill:#fde68a;opacity:.8}
+body[data-mtool="del"] #ladder .hit:hover{fill:#fecaca;opacity:.8}
+#ladder .ins{cursor:copy}#ladder .ins:hover circle{r:11}
+#ladder .newrung:hover rect{fill:rgba(234,88,12,.06)}
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:4px;border-radius:2px}
 .pop{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.22);display:flex;flex-direction:column;gap:9px;width:260px}
@@ -309,11 +313,14 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
         <div id="mEd" hidden>
           <div class="btool"><div class="seg" id="mSeg"><button data-e="1">내 회로 편집</button><button data-e="0">예시 회로 보기</button></div></div>
           <div id="mEdBody">
-            <div class="small" style="margin:2px 0 6px;color:var(--muted)">기본동작 정답 회로에서 시작합니다. 아래 글을 고치거나 회로도의 접점을 눌러 바꾸면 바로 적용됩니다.
-              <b>띄어쓰기</b>=직렬 · <b>|</b>=병렬(괄호로 묶기) · <b>/</b>=b접점 · <b>=</b> 뒤에 코일. 예) <span class="mono">(PB1 S1 | K1) /K3 /ES = K1</span>, <span class="mono">K5 = T1</span>, <span class="mono">T1 = K6</span>, <span class="mono">PB2 = CR1</span></div>
-            <textarea id="mText" class="mono" spellcheck="false" rows="9" style="width:100%;box-sizing:border-box;font-size:13px;line-height:1.55;padding:8px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);color:var(--ink)"></textarea>
+            <div class="btool" style="margin-top:2px"><div class="seg" id="mTools"><button data-t="sel" aria-pressed="true">☝ 바꾸기</button><button data-t="ser" aria-pressed="false">＋ 직렬 넣기</button><button data-t="par" aria-pressed="false">⇉ 옆으로 벌리기</button><button data-t="del" aria-pressed="false">✕ 지우기</button></div>
+              <span class="small" id="mToolHint" style="color:var(--edit)">접점·코일을 누르면 신호, a/b, 위치를 바꿉니다.</span></div>
             <div class="small" id="mErr" style="min-height:18px;margin:2px 0 4px"></div>
-            <div class="btool"><button class="btn small" id="mAddRung">＋ 줄 추가</button><button class="btn small" id="mExample">예시 회로 불러오기</button><button class="btn small ghost" id="mReset">기본 회로로 되돌리기</button></div>
+            <details class="mini"><summary>글로 편집 (고급)</summary>
+            <div class="small" style="margin:4px 0 6px;color:var(--muted)"><b>띄어쓰기</b>=직렬 · <b>|</b>=병렬(괄호로 묶기) · <b>/</b>=b접점 · <b>=</b> 뒤에 코일. 예) <span class="mono">(PB1 S1 | K1) /K3 /ES = K1</span>, <span class="mono">K5 = T1</span>, <span class="mono">PB3 = CR1</span></div>
+            <textarea id="mText" class="mono" spellcheck="false" rows="9" style="width:100%;box-sizing:border-box;font-size:13px;line-height:1.55;padding:8px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);color:var(--ink)"></textarea>
+            </details>
+            <div class="btool"><button class="btn small" id="mExample">예시 회로 불러오기</button><button class="btn small ghost" id="mReset">기본 회로로 되돌리기</button></div>
           </div>
         </div>
         <div class="btool">
@@ -950,7 +957,6 @@ $("mSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!
 let mT=null; $("mText").addEventListener("input",()=>{ clearTimeout(mT); mT=setTimeout(()=>applyTxt($("mText").value),500); });
 $("mReset").onclick=()=>{ store.set("mlad:"+probKey(),null); curL=clone(fixL); $("mText").value=lad2txt(curL); applyTxt($("mText").value); };
 $("mExample").onclick=()=>{ $("mText").value=lad2txt(exL); applyTxt($("mText").value); };
-$("mAddRung").onclick=()=>{ const ta=$("mText"); ta.value=ta.value.replace(/\s*$/,"")+"\nPB2 = K6"; applyTxt(ta.value); ta.focus(); };
 function load(){
   prob=(kind==="P"?P.PN:P.HY)[no-1];
   baseL=S.buildLadder(prob.rungs); fixL=remapIds(baseL,S.buildLadder(prob.fix));
@@ -1163,7 +1169,7 @@ function rungDiff(i){ // compare current rung i to fix rung i
 function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   const L=curL, m=machine, val=(l)=>m.val(l), out=[];
   const baseMap=S.contactMap(baseL);
-  const base=mode==="base", edt=base||(mode==="maint"&&mEdit);
+  const base=mode==="base", mE=mode==="maint"&&mEdit, edt=base||mE; const insPts=[], insSeen=new Set();
   const wire=(x1,y1,x2,y2,on)=>out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${on?"var(--live)":"var(--ink)"}" stroke-width="${on?2.6:1.4}"/>`);
   const lay=L.rungs.map(r=>{ const ps=size(r.s); const os=r.out.map(o=>size(o.e)); return {ps,os,w:Math.max(ps.w,os.reduce((a,b)=>a+Math.max(b.w,1),0)),h:ps.h+Math.max(...os.map(o=>o.h))}; });
   const H=Math.max(...lay.map(l=>l.h)), yCoil=TOP+H*RH+18, yBot=yCoil+52;
@@ -1199,7 +1205,9 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   function draw(n,x,y,pin,path){
     if(!n) return pin;
     if(n.t==="c") return contact(n,x,y,pin,path);
-    if(n.t==="s"){ let p=pin, yy=y; n.items.forEach((c,i)=>{ const s=size(c); p=draw(c,x,yy,p,path+","+i); yy+=s.h*RH; }); return p; }
+    if(n.t==="s"){ let p=pin, yy=y; const ys=[y]; n.items.forEach((c,i)=>{ const s=size(c); p=draw(c,x,yy,p,path+","+i); yy+=s.h*RH; ys.push(yy); });
+      if(mE&&mTool==="ser") ys.forEach((yk,k)=>{ const cy=yk; const key=x+","+Math.round(cy); if(insSeen.has(key)) return; insSeen.add(key); insPts.push(`<g class="ins" data-ins="${path}#${k}"><circle cx="${x}" cy="${cy}" r="9" fill="var(--edit)" stroke="#fff" stroke-width="2"/><text x="${x}" y="${cy+4.5}" font-size="14" font-weight="700" text-anchor="middle" fill="#fff">+</text><title>여기에 접점 넣기 (직렬)</title></g>`); });
+      return p; }
     const sz=size(n); let xx=x, any=false; const bottoms=[];
     n.items.forEach((c,j)=>{ const s=size(c); const o=draw(c,xx,y,pin,path+","+j); if(s.h<sz.h) wire(xx,y+s.h*RH,xx,y+sz.h*RH,o); bottoms.push(xx); any=any||o; xx+=s.w*CW; });
     const xl=bottoms[bottoms.length-1];
@@ -1211,6 +1219,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     if(edt){ out.push(`<circle class="hit" data-j="${path}" data-end="top" cx="${x}" cy="${y}" r="10"><title>분기점 위치 옮기기</title></circle><circle class="hit" data-j="${path}" data-end="bot" cx="${x}" cy="${y+sz.h*RH}" r="10"><title>합류점 위치 옮기기</title></circle>`); }
     return any;
   }
+  let coilPath=null;
   function coilSym(name,x,on,flag){
     const y=yCoil, f=on?"var(--liveSoft)":"var(--card)", s=on?"var(--live)":"var(--ink)";
     if(name[0]==="H"){ out.push(`<circle cx="${x}" cy="${y+12}" r="11" fill="${on?"#ffcf33":"var(--card)"}" stroke="${s}" stroke-width="1.6"/><path d="M${x-7} ${y+5} L${x+7} ${y+19} M${x+7} ${y+5} L${x-7} ${y+19}" stroke="${s}" stroke-width="1.4"/>`); }
@@ -1225,6 +1234,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     out.push(`<text x="${x}" y="${y+40}" font-size="11.5" text-anchor="middle" font-weight="600" fill="${flag||"var(--ink)"}">${lab}</text>`);
     if(ann&&ann["coil:"+name]) out.push(`<text x="${x+22}" y="${y+16}" font-size="10" text-anchor="start" fill="var(--fix)" font-weight="700" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${ann["coil:"+name]}</text>`);
     wire(x,y+24,x,yBot,on);
+    if(mE&&coilPath) out.push(`<rect class="hit chit" data-coil="${coilPath}" x="${x-24}" y="${y-4}" width="48" height="50" rx="6"><title>코일 ${name}</title></rect>`);
   }
   L.rungs.forEach((r,i)=>{
     const l=lay[i], x=X+CW/2;
@@ -1240,11 +1250,13 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     r.out.forEach((o,j)=>{
       const ox=xs[j]; const po=draw(o.e,ox,yB,pOut,`${i}|o${j}|`); const yE=yB+l.os[j].h*RH;
       wire(ox,yE,ox,yCoil,po);
-      coilSym(o.coil,ox,!!m.coil[o.coil],structEdited?"var(--edit)":null);
+      coilPath=`${i}|${j}`; coilSym(o.coil,ox,!!m.coil[o.coil],structEdited?"var(--edit)":null); coilPath=null;
       out.push(`<circle cx="${ox}" cy="${yBot}" r="3" fill="var(--ink)"/>`);
     });
     X+=l.w*CW+8;
   });
+  if(mE){ const gx=X+CW/2; out.push(`<g class="newrung" style="cursor:pointer"><rect x="${X+4}" y="${TOP-4}" width="${CW-8}" height="${yCoil-TOP+30}" rx="8" fill="none" stroke="var(--edit)" stroke-width="1.6" stroke-dasharray="6 5"/><circle cx="${gx}" cy="${(TOP+yCoil)/2}" r="14" fill="var(--edit)"/><text x="${gx}" y="${(TOP+yCoil)/2+6}" font-size="20" font-weight="700" text-anchor="middle" fill="#fff">+</text><text x="${gx}" y="${(TOP+yCoil)/2+34}" font-size="11" font-weight="600" text-anchor="middle" fill="var(--edit)">새 줄</text><title>회로 한 줄 추가</title></g>`); X+=CW+8; }
+  out.push(...insPts);
   const W=X+20;
   out.unshift(`<line x1="40" y1="${TOP-14}" x2="${W-10}" y2="${TOP-14}" stroke="var(--plus)" stroke-width="2.6"/><line x1="40" y1="${yBot}" x2="${W-10}" y2="${yBot}" stroke="var(--minus)" stroke-width="2.6"/>`);
   out.unshift(`<text x="6" y="${TOP-10}" font-size="12" font-weight="600" fill="var(--plus)">24V</text><text x="10" y="${yBot+4}" font-size="12" font-weight="600" fill="var(--minus)">0V</text>`);
@@ -1275,6 +1287,43 @@ function place(pop,ev){
   pop.style.left=x+"px"; pop.style.top=y+"px";
 }
 function flash(msg){ const m=$("popMsg"); if(m) m.textContent=msg; }
+// ---------- maintenance: graphical editing tools ----------
+let mTool="sel";
+const newC=()=>({t:"c",l:"NEW",nc:false,id:99999});
+function findNew(L){ let found=null; const walk=(n,path)=>{ if(found||!n) return; if(n.t==="c"){ if(n.l==="NEW"){ n.l="K1"; found=path; } return; } n.items.forEach((x,k)=>walk(x,path+","+k)); };
+  L.rungs.forEach((r,i)=>{ walk(r.s,`${i}|s|`); r.out.forEach((o,j)=>walk(o.e,`${i}|o${j}|`)); }); return found; }
+function mCommit(){ curL=S.buildLadder(txtLines(lad2txt(curL))); const np=findNew(curL); saveLad(); machine=new S.Machine(simProb,curL); trace=[]; $("result").innerHTML=""; return np; }
+function freeK(){ const used=new Set(); curL.rungs.forEach(r=>r.out.forEach(o=>used.add(o.coil))); for(let k=1;k<=9;k++) if(!used.has("K"+k)) return "K"+k; return "K9"; }
+function maintClick(e){
+  const ins=e.target.closest(".ins");
+  if(ins){ const [sp,k]=ins.dataset.ins.split("#"); const n=resolve(sp).node; n.items.splice(+k,0,newC()); const np=mCommit(); if(np) openPop(np,e); flash("새 접점을 넣었습니다. 신호와 a/b를 고르세요."); return true; }
+  if(e.target.closest(".newrung")){ curL.rungs.push({s:{t:"s",items:[newC()]},out:[{e:{t:"s",items:[]},coil:freeK()}]}); const np=mCommit(); if(np) openPop(np,e); flash("새 줄을 만들었습니다. 접점 신호를 고르고, 코일은 코일을 눌러 바꾸세요."); return true; }
+  const ch=e.target.closest(".chit");
+  if(ch){ const [i,j]=ch.dataset.coil.split("|").map(Number);
+    if(mTool==="del"){ curL.rungs[i].out.splice(j,1); if(!curL.rungs[i].out.length) curL.rungs.splice(i,1); mCommit(); return true; }
+    openCoilPop(i,j,e); return true; }
+  const h=e.target.closest(".hit"); if(!h) return false;
+  if(mTool==="par"){
+    if(h.dataset.path){ const r=resolve(h.dataset.path); r.S.items[r.i]={t:"p",items:[{t:"s",items:[r.node]},{t:"s",items:[newC()]}]}; const np=mCommit(); if(np) openPop(np,e); flash("옆으로 벌려 병렬 접점을 넣었습니다. 신호를 고르세요."); return true; }
+    if(h.dataset.j!==undefined){ const r=resolve(h.dataset.j); r.node.items.push({t:"s",items:[newC()]}); const np=mCommit(); if(np) openPop(np,e); flash("병렬 가지를 하나 더 넣었습니다."); return true; }
+  }
+  if(mTool==="del"&&h.dataset.path){ const r=resolve(h.dataset.path); r.S.items.splice(r.i,1); mCommit(); return true; }
+  return false;
+}
+function openCoilPop(i,j,ev){ const pop=$("pop"), o=curL.rungs[i].out[j];
+  const ys=[...new Set(simProb.act.flatMap(a=>a.valve?[a.valve.y,a.valve.plus,a.valve.minus].filter(Boolean):[]))].sort();
+  const g=(arr)=>arr.map(l=>`<button class="opt" data-c="${l}" aria-pressed="${o.coil===l}">${l==="CR1"?"C1 리셋":l}</button>`).join("");
+  pop.innerHTML=`<div class="lab">코일 ${o.coil==="CR1"?"C1 리셋":o.coil}</div><div class="lab">릴레이·타이머·카운터</div><div class="row">${g(["K1","K2","K3","K4","K5","K6","K7","K8","K9","T1","C1","CR1"])}</div>
+   <div class="lab">솔레노이드·램프</div><div class="row">${g(ys)}${g(["H1","H2","H3","H4"])}</div>
+   <div class="row" style="justify-content:space-between"><button class="btn small" data-del="1" style="color:var(--bad)">✕ 이 줄 삭제</button><button class="btn small primary" data-close="1">닫기</button></div>`;
+  pop.hidden=false; place(pop,ev);
+  pop.onclick=(e)=>{ const b=e.target.closest("button"); if(!b) return; if(b.dataset.close){ pop.hidden=true; return; }
+    if(b.dataset.del){ curL.rungs[i].out.splice(j,1); if(!curL.rungs[i].out.length) curL.rungs.splice(i,1); mCommit(); pop.hidden=true; return; }
+    if(b.dataset.c){ curL.rungs[i].out[j].coil=b.dataset.c; mCommit(); openCoilPop(i,j,ev); } };
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("#mTools button"); if(!b) return; mTool=b.dataset.t; document.querySelectorAll("#mTools button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.t===mTool));
+  $("mToolHint").textContent={sel:"접점·코일을 누르면 신호, a/b, 위치를 바꿉니다.",ser:"주황 ＋를 누르면 그 자리에 접점이 직렬로 들어갑니다.",par:"접점을 누르면 옆으로 벌려 병렬 접점이 생기고, 분기점(●)을 누르면 가지가 하나 더 생깁니다.",del:"지울 접점이나 코일을 누르세요."}[mTool];
+  document.body.dataset.mtool=mTool; ladVer++; });
 function openPop(path,ev){
   popAnchor={path,ev};
   const {node:c,S:Sr,i}=resolve(path), orig=S.contactMap(baseL)[c.id]||{l:c.l,nc:c.nc}, o=labelOptions(), pop=$("pop");
@@ -1330,7 +1379,7 @@ function openJPop(path,end,ev){
     path=r.path; saveLad(); flash("옮겼습니다.");
   };
 }
-$("ladder").addEventListener("click",e=>{ const jb=e.target.closest(".jbtn"); if(jb){ const r=applyJ(jb.dataset.j,jb.dataset.op); lineMsg=r.msg||""; if(!r.msg) saveLad(); else { ladVer++; } $("lineMsg").textContent=lineMsg; return; } const h=e.target.closest(".hit"); if(!h) return; if(h.dataset.j!==undefined) openJPop(h.dataset.j,h.dataset.end,e); else openPop(h.dataset.path,e); });
+$("ladder").addEventListener("click",e=>{ if(mode==="maint"&&mEdit&&maintClick(e)) return; const jb=e.target.closest(".jbtn"); if(jb){ const r=applyJ(jb.dataset.j,jb.dataset.op); lineMsg=r.msg||""; if(!r.msg) saveLad(); else { ladVer++; } $("lineMsg").textContent=lineMsg; return; } const h=e.target.closest(".hit"); if(!h) return; if(h.dataset.j!==undefined) openJPop(h.dataset.j,h.dataset.end,e); else openPop(h.dataset.path,e); });
 document.addEventListener("pointerdown",e=>{ if(!$("pop").hidden&&!e.target.closest("#pop")&&!e.target.closest(".hit")) $("pop").hidden=true; });
 function countChanges(){
   if(mode!=="base") return {c:0,s:0};
