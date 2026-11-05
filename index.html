@@ -2211,22 +2211,32 @@ function renderWire(){
   // wires
   wires.forEach((w,i)=>{ const a=JACK[w.a], b=JACK[w.b]; if(!a||!b) return; const sag=Math.min(260,40+Math.abs(a.x-b.x)*0.22);
     const d=`M${a.x} ${a.y} C${a.x} ${a.y+sag} ${b.x} ${b.y+sag} ${b.x} ${b.y}`; const col=w.c==="r"?"#d62a1f":w.c==="u"?"#1f4fd8":"#141618";
-    const live=st&&!st.short&&st.plus.has(st.root[w.a]);
-    o.push(`<path class="hosehit" data-w="${i}" d="${d}"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${live?9:7}" stroke-linecap="round" opacity=".9" pointer-events="none"/>${live?`<path d="${d}" fill="none" stroke="#ffe08a" stroke-width="2.5" stroke-dasharray="10 14" pointer-events="none"/>`:""}<circle cx="${a.x}" cy="${a.y}" r="9" fill="${col}" pointer-events="none"/><circle cx="${b.x}" cy="${b.y}" r="9" fill="${col}" pointer-events="none"/>`); });
+    const live=st&&!st.short&&st.plus.has(st.root[w.a]), zero=st&&!st.short&&!live&&st.minus.has(st.root[w.a]);
+    o.push(`<path class="hosehit" data-w="${i}" d="${d}"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${live?9:7}" stroke-linecap="round" opacity=".9" pointer-events="none"/>${live?`<path d="${d}" fill="none" stroke="#ffe08a" stroke-width="2.5" stroke-dasharray="10 14" pointer-events="none"/>`:zero?`<path d="${d}" fill="none" stroke="#bcd3ff" stroke-width="2" stroke-dasharray="3 9" pointer-events="none"/>`:""}<circle cx="${a.x}" cy="${a.y}" r="9" fill="${col}" pointer-events="none"/><circle cx="${b.x}" cy="${b.y}" r="9" fill="${col}" pointer-events="none"/>`); });
   // jack hotspots
   Object.values(JACK).forEach(j=>{ const on=wpend===j.id, live=st&&!st.short&&st.plus.has(st.root[j.id]);
     if(j.field){ const fill=j.kind==="p"?"#d63a2f":j.kind==="n"?"#2a5bd7":"#2b2f34"; o.push(`<g class="jack" data-j="${j.id}"><circle cx="${j.x}" cy="${j.y}" r="12" fill="#e8ebee" stroke="${on?"#f59e0b":live?"#ff5a4d":"#8a939c"}" stroke-width="${on?5:2}"/><circle cx="${j.x}" cy="${j.y}" r="6" fill="${fill}"/><text x="${j.x}" y="${j.y+26}" font-size="12" text-anchor="middle" font-weight="700" fill="#444">${esc(j.lab)}</text></g>`); return; }
     o.push(`<g class="jack" data-j="${j.id}"><circle cx="${j.x}" cy="${j.y}" r="15" fill="rgba(255,255,255,0.01)" stroke="${on?"#f59e0b":live?"#ff5a4d":"rgba(255,255,255,.75)"}" stroke-width="${on?6:live?4:2}"/><title>${esc(j.id)}</title></g>`); });
   $("wdyn").innerHTML=o.join("");
-  $("wStat").innerHTML=`<span class="chip">전선 ${wires.length}개</span>`+(useWire?`<span class="chip ${m.short?"bad":wires.length?"ok":"bad"}">${m.short?"단락!":wires.length?"내 배선으로 동작 중":"배선 없음 — 움직이지 않습니다"}</span>`:`<span class="chip">래더 회로로 동작 중</span>`)+(wpend?`<span class="chip">선택: ${esc(wpend)} → 연결할 단자를 누르세요</span>`:"");
+  const hints=loadHints(st);
+  $("wStat").innerHTML=`<span class="chip">전선 ${wires.length}개</span>`+(useWire?`<span class="chip ${m.short?"bad":wires.length?"ok":"bad"}">${m.short?"단락!":wires.length?"내 배선으로 동작 중":"배선 없음 — 움직이지 않습니다"}</span>`:`<span class="chip">래더 회로로 동작 중</span>`)+(wpend?`<span class="chip">선택: ${esc(wpend)} → 연결할 단자를 누르세요</span>`:"")+hints.map(h=>`<span class="chip bad">${h}</span>`).join("");
 }
+function loadName(n){ if(/^K\d$/.test(n)){ const k=+n.slice(1); return `릴레이 모듈${Math.ceil(k/3)} RY${(k-1)%3+1} 코일`; } if(/^Y\d/.test(n)) return `솔레노이드 ${n}`; if(/^X(\d+)c(\d)$/.test(n)) return "솔레노이드"; if(/^PL/.test(n)) return "스위치 표시등"; if(n==="T1") return "타이머 코일"; if(n==="C1") return "카운터 코일"; if(n==="CR1") return "카운터 리셋"; return n; }
+function loadHints(st){ if(!st||st.short) return []; const out=[]; const wired=(j)=>wires.some(w=>w.a===j||w.b===j);
+  LOADS.forEach(l=>{ if(!JACK[l.a]||!JACK[l.b]||(!wired(l.a)&&!wired(l.b))) return; const ra=st.root[l.a], rb=st.root[l.b];
+    const pa=st.plus.has(ra), pb=st.plus.has(rb), ma=st.minus.has(ra), mb=st.minus.has(rb);
+    if((pa&&mb)||(pb&&ma)) return;
+    const other=pa?rb:pb?ra:null; if(other==null) return;
+    const ser=LOADS.find(x=>x!==l&&JACK[x.a]&&JACK[x.b]&&(st.root[x.a]===other||st.root[x.b]===other)&&(wired(x.a)||wired(x.b)));
+    out.push(`${loadName(l.name)}: +24V는 들어오는데 반대쪽이 0V에 연결되지 않았습니다${ser?` — ${loadName(ser.name)}와(과) 직렬로 이어져 둘 다 동작하지 않습니다 (각각 0V에 연결)`:""}`); });
+  return out.slice(0,3); }
 let hSig="";
 function hoseTick(){ if(APP.mode!=="build"||$("tabHose").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.sol,m.sens,m.pos&&Object.values(m.pos).map(v=>v<=0.001?0:v>=0.999?2:1)]); if(sig!==hSig&&!drag){ hSig=sig; renderBoard(); } else animBoard(); requestAnimationFrame(hoseTick); }
 function animBoard(B0){ const B=B0||$("board"), sym=!B0&&view==="sym"; comps.forEach(c=>{ if(c.t!=="cyl"&&c.t!=="motor") return; const g=B.querySelector("#an"+c.id); if(!g) return;
   if(c.t==="motor") g.setAttribute("transform",`rotate(${ang(c).toFixed(1)} ${g.dataset.cx} ${g.dataset.cy})`);
   else { const ex=pos(c)*(sym?120:110); g.setAttribute("transform",`translate(${ex.toFixed(1)} 0)`); const r=B.querySelector("#ar"+c.id); if(r) r.setAttribute("width",(34+ex).toFixed(1)); } }); }
 let wSig="";
-function wireTick(){ if(APP.mode!=="build"||$("tabWire").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.relay,m.inp,m.coil,m.sens,m.cnt,m.timer.T1&&Math.round(m.timer.T1.acc/100),wires.length,wpend,useWire,m.short]); if(sig!==wSig){ wSig=sig; renderWire(); drawRef(); } else animBoard($("whose")); requestAnimationFrame(wireTick); }
+function wireTick(){ if(APP.mode!=="build"||$("tabWire").hidden) return; const m=APP.machine; const sig=JSON.stringify([m.netEval&&m.netEval.last&&m.netEval.last.plus.size,m.relay,m.inp,m.coil,m.sens,m.cnt,m.timer.T1&&Math.round(m.timer.T1.acc/100),wires.length,wpend,useWire,m.short]); if(sig!==wSig){ wSig=sig; renderWire(); drawRef(); } else animBoard($("whose")); requestAnimationFrame(wireTick); }
 let annCache=null, annFor=null;
 $("refBox").addEventListener("toggle",()=>drawRef());
 function drawRef(){ if($("refBox").open===false) return;
