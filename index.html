@@ -1971,7 +1971,19 @@ function fluidEval(m,eff){
 
 
 // ---------- vector drawing of the electrical modules (same jack positions as the photo) ----------
-let wArt=store.get("wart","draw");
+let wArt=store.get("wart","draw"), GEO={}, COILG={};
+function contactsLive(m){ if(wArt!=="draw") return ""; const o=[], ON="#e89b00", SY="#1f2328";
+  SW.forEach(w=>{ if(!w.c||JACK[w.c]&&JACK[w.c].field) return; const pre=w.c.slice(0,-2); const act=!!w.act(m), g=GEO[pre];
+    if(g){ const t=act?g.So:g.Sk; o.push(`<line x1="${g.P.x}" y1="${g.P.y}" x2="${t[0]}" y2="${t[1]}" stroke="${act?ON:SY}" stroke-width="5" stroke-linecap="round"/>`); return; }
+    ["no","nc"].forEach(kd=>{ const s=GEO[pre+"#"+kd]; if(!s) return; const closed=kd==="no"?act:!act;
+      o.push(`<g transform="translate(${s.x} ${s.y}) rotate(${s.ang.toFixed(1)})"><line x1="${s.g0}" y1="0" x2="${closed?s.g1+2:s.g1-6}" y2="${closed?-3:-22}" stroke="${act?ON:SY}" stroke-width="5" stroke-linecap="round"/></g>`); }); });
+  Object.entries(COILG).forEach(([id,c])=>{ const on=/^K/.test(id)?!!m.relay[id]:id==="T1"?!!m.coil.T1:id==="C1"?!!m.coil.C1:!!m.coil[id]; if(!on) return;
+    o.push(`<rect x="${c.cx-30}" y="${c.cy-14}" width="60" height="28" rx="3" fill="#ffd84d" stroke="#333" stroke-width="2.5"/><circle cx="${c.cx-17}" cy="${c.cy}" r="16" fill="#ff3b30" opacity=".35"/><circle cx="${c.cx-17}" cy="${c.cy}" r="7" fill="#ff2a1f" stroke="#fff" stroke-width="1.5"/><text x="${c.cx+9}" y="${c.cy+5}" font-size="13" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial,sans-serif">${c.lab}</text>`); });
+  // pilot lamps on the switch units
+  Object.keys(PJ.J).forEach(k=>{ const mm=k.match(/^(SG(\d))\.L(\d)\.A1$/); if(!mm) return; if(!m.coil["PL"+mm[2]+mm[3]]) return; const A=PJ.J[k], B=PJ.J[mm[1]+".L"+mm[3]+".A2"]; const cx=(A.x+B.x)/2, cy=(A.y+B.y)/2;
+    o.push(`<circle cx="${cx}" cy="${cy}" r="18" fill="#ffd400" opacity=".5"/><circle cx="${cx}" cy="${cy}" r="10" fill="#ffe14d" stroke="#333" stroke-width="2"/>`); });
+  return o.join("");
+}
 function panelArt(){
   const J=PJ.J, U=HOT.units, o=[], H=HOT.H;
   const TITLE={ES:"EMERGENCY SWITCH UNIT",DC:"DC POWER SUPPLY",SG1:"SIGNAL INPUT SWITCH UNIT",SG2:"SIGNAL INPUT SWITCH UNIT",RY1:"RELAY UNIT",RY2:"RELAY UNIT",RY3:"RELAY UNIT",TM:"ON-DELAY TIMER UNIT",CT:"DIGITAL COUNTER UNIT",LP:"BUZZER & LAMP UNIT"};
@@ -1986,13 +1998,25 @@ function panelArt(){
   const bus=(re,col)=>{ const g={}; Object.entries(J).forEach(([k,j])=>{ const m=k.match(re); if(m){ (g[m[1]]=g[m[1]]||[]).push(j); } }); Object.values(g).forEach(js=>{ js.sort((p,q)=>p.x-q.x); if(js.length>1) o.push(`<polyline points="${js.map(j=>j.x+","+j.y).join(" ")}" fill="none" stroke="${col}" stroke-width="3"/>`); }); };
   bus(/^(\w+)\.BP\d$/,"#d14b40"); bus(/^(\w+)\.BN\d$/,"#3d63c9");
   const ln=(p,q,dash)=>{ const A=J[p],B=J[q]; if(A&&B) o.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#6b737b" stroke-width="2.5"${dash?' stroke-dasharray="6 5"':""}/>`); };
-  // contacts printed between COM and NO/NC
-  Object.keys(J).forEach(k=>{ const m=k.match(/^(.+)\.C$/); if(!m) return; ln(k,m[1]+".NO"); ln(k,m[1]+".NC",1); });
+  // contact symbols: leads are printed; the moving blade is drawn live (see contactsLive)
+  GEO={}; const SY="#1f2328", GA="#15803d", RB="#c2410c";
+  const at=(P,Q,t)=>[P.x+(Q.x-P.x)*t,P.y+(Q.y-P.y)*t];
+  const badge=(j,nc)=>{ const x=j.x, y=j.y-29; o.push(`<rect x="${x-11}" y="${y-10}" width="22" height="20" rx="5" fill="${nc?RB:GA}"/><text x="${x}" y="${y+5}" font-size="14" font-weight="700" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif">${nc?"b":"a"}</text>`); };
+  Object.keys(J).forEach(k=>{ const m=k.match(/^(.+)\.C$/); if(!m) return; const pre=m[1], C=J[k], NO=J[pre+".NO"], NC=J[pre+".NC"];
+    if(NO&&NC&&Math.abs(NO.y-NC.y)<40&&C.y-Math.min(NO.y,NC.y)>40){
+      const top=Math.min(NO.y,NC.y), P={x:C.x,y:C.y-(C.y-top)*0.42}, So=at(NO,P,0.42), Sk=at(NC,P,0.42);
+      o.push(`<line x1="${C.x}" y1="${C.y-17}" x2="${P.x}" y2="${P.y}" stroke="${SY}" stroke-width="3"/><circle cx="${P.x}" cy="${P.y}" r="4" fill="${SY}"/>`);
+      o.push(`<line x1="${NO.x}" y1="${NO.y+16}" x2="${So[0]}" y2="${So[1]}" stroke="${GA}" stroke-width="3"/><circle cx="${So[0]}" cy="${So[1]}" r="3.5" fill="${GA}"/><line x1="${NC.x}" y1="${NC.y+16}" x2="${Sk[0]}" y2="${Sk[1]}" stroke="${RB}" stroke-width="3"/><circle cx="${Sk[0]}" cy="${Sk[1]}" r="3.5" fill="${RB}"/>`);
+      GEO[pre]={k:"co",P,So,Sk}; badge(NO,0); badge(NC,1); return; }
+    [[NO,0],[NC,1]].forEach(([B,nc])=>{ if(!B) return; const dx=B.x-C.x, dy=B.y-C.y, L=Math.hypot(dx,dy), r=17, g0=r+(L-2*r)*0.3, g1=r+(L-2*r)*0.7, ang=Math.atan2(dy,dx)*180/Math.PI;
+      o.push(`<g transform="translate(${C.x} ${C.y}) rotate(${ang.toFixed(1)})"><line x1="${r}" y1="0" x2="${g0}" y2="0" stroke="${SY}" stroke-width="3"/><line x1="${g1}" y1="0" x2="${L-r}" y2="0" stroke="${nc?RB:GA}" stroke-width="3"/><circle cx="${g0}" cy="0" r="4" fill="${SY}"/><circle cx="${g1}" cy="0" r="3.5" fill="${nc?RB:GA}"/></g>`);
+      GEO[pre+(nc?"#nc":"#no")]={k:"s",x:C.x,y:C.y,ang,g0,g1,nc}; badge(B,nc); }); });
   // relay / timer / counter coils
   const coil=(id,lab)=>{ const A=J[id+".A1"],B=J[id+".A2"]; if(!A||!B) return; const vx=Math.abs(A.x-B.x)<Math.abs(A.y-B.y);
     const cx=(A.x+B.x)/2, cy=(A.y+B.y)/2; o.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#6b737b" stroke-width="2.5"/>`);
-    o.push(vx?`<rect x="${cx-26}" y="${cy-13}" width="52" height="26" fill="#fff" stroke="#333" stroke-width="2.5"/><text x="${cx}" y="${cy+6}" font-size="15" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial,sans-serif">${lab}</text>`
-      :`<rect x="${cx-24}" y="${cy-14}" width="48" height="28" fill="#fff" stroke="#333" stroke-width="2.5"/><text x="${cx}" y="${cy+6}" font-size="14" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial,sans-serif">${lab}</text>`); };
+    COILG[id]={cx,cy,vx,lab};
+    o.push(vx?`<rect x="${cx-30}" y="${cy-14}" width="60" height="28" rx="3" fill="#fff" stroke="#333" stroke-width="2.5"/><circle cx="${cx-17}" cy="${cy}" r="7" fill="#5a1b1b" stroke="#222" stroke-width="1.5"/><text x="${cx+9}" y="${cy+5}" font-size="13" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial,sans-serif">${lab}</text>`
+      :`<rect x="${cx-30}" y="${cy-14}" width="60" height="28" rx="3" fill="#fff" stroke="#333" stroke-width="2.5"/><circle cx="${cx-17}" cy="${cy}" r="7" fill="#5a1b1b" stroke="#222" stroke-width="1.5"/><text x="${cx+9}" y="${cy+5}" font-size="13" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial,sans-serif">${lab}</text>`); };
   for(let k=1;k<=9;k++) coil("K"+k,"RY"+((k-1)%3+1)); coil("T1","T1"); coil("C1","C"); coil("CR1","R");
   // pushbuttons + pilot lamps
   const BC={PB1:"#1f9d3a",PB2:"#2050c8",SW13:"#d23a2c",PB3:"#1f9d3a",SW22:"#2050c8",SW23:"#d23a2c"};
@@ -2179,9 +2203,10 @@ function renderWire(){
   Object.entries(HOT.btn).forEach(([k,[x,y]])=>{ const on=!!m.inp[k], lock=HOT.lock.includes(k); const r=k==="ES"?70:34;
     o.push(`<g class="wbtn" data-inp="${k}" data-lock="${lock?1:0}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="${r}" fill="${on?"rgba(255,207,51,.35)":"rgba(255,255,255,0)"}" stroke="${on?"#ffcf33":"rgba(255,255,255,.0)"}" stroke-width="6"/></g>`);
     const name={PB1:"PB1",PB2:"PB2",PB3:"PB3",ES:"비상정지"}[k]; if(name) o.push(`<text x="${x}" y="${y+r+18}" font-size="17" text-anchor="middle" font-weight="700" fill="#1d4fd0" stroke="#fff" stroke-width="4" paint-order="stroke">${name}</text>`); });
-  Object.entries(HOT.ry).forEach(([k,[x,y]])=>{ if(m.relay[k]) o.push(`<circle cx="${x}" cy="${y}" r="9" fill="#ffd400" stroke="#a80" stroke-width="2"/><circle cx="${x}" cy="${y}" r="16" fill="#ffd400" opacity=".35"/>`); });
+  if(wArt!=="draw") Object.entries(HOT.ry).forEach(([k,[x,y]])=>{ if(m.relay[k]) o.push(`<circle cx="${x}" cy="${y}" r="9" fill="#ffd400" stroke="#a80" stroke-width="2"/><circle cx="${x}" cy="${y}" r="16" fill="#ffd400" opacity=".35"/>`); });
   { const [x,y,w,h]=HOT.tdisp, tm=m.timer.T1; o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#140808"/><text x="${x+w/2}" y="${y+h/2+11}" font-size="30" text-anchor="middle" fill="#ff4d3d" font-family="var(--mono)">${tm?(Math.min(tm.acc,3000)/1000).toFixed(1):"0.0"}</text>`); }
   { const [x,y,w,h]=HOT.cdisp; o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#140808"/><text x="${x+w/2}" y="${y+h/2+12}" font-size="34" text-anchor="middle" fill="#ff4d3d" font-family="var(--mono)">${m.cnt.C1||0}</text>`); }
+  o.push(contactsLive(m));
   Object.entries(HOT.lamps).forEach(([k,[x,y]])=>{ if(m.coil[k]) o.push(`<circle cx="${x}" cy="${y}" r="40" fill="#fff4a0" opacity=".55"/><circle cx="${x}" cy="${y}" r="24" fill="#fff" opacity=".6"/>`); });
   // wires
   wires.forEach((w,i)=>{ const a=JACK[w.a], b=JACK[w.b]; if(!a||!b) return; const sag=Math.min(260,40+Math.abs(a.x-b.x)*0.22);
