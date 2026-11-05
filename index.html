@@ -1440,7 +1440,10 @@ let lastSens={}; let lastSpeed={}; let vmap={}; let comps=[], hoses=[], view=sto
 
 function hoseKey(){ return "hose:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":""); }
 function saveHose(){ store.set(hoseKey(),{comps,hoses}); }
-function loadHose(){ const d=store.get(hoseKey(),null); comps=d?d.comps:[]; hoses=d?d.hoses:[]; nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; }
+const SETDEF=()=>({su:0.5,relief:4.0,prv:isH()?2.0:0.3,cbv:3.0,ps:3.0});
+function loadHose(){ const d=store.get(hoseKey(),null); comps=(d&&Array.isArray(d.comps))?d.comps:[]; hoses=(d&&Array.isArray(d.hoses))?d.hoses:[];
+  comps=comps.filter(c=>c&&T[c.t]); comps.forEach(c=>{ if(T[c.t].adj&&(typeof c.set!=="number"||isNaN(c.set))) c.set=SETDEF()[c.t]; if(c.t==="sensLS"&&c.dir==null) c.legacyDir=true; });
+  nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; }
 
 function motorPlan(a){ // returns plan for motors
   const p=APP.prob;
@@ -1496,6 +1499,7 @@ function sensMap(){
   comps.filter(c=>isSens(c.t)&&c.lab).forEach(c=>{ if(map[c.lab]) return; const d=T[c.t]; const cx=c.x+d.w/2, cy=c.y+d.h; const kind=c.t==="sensS"?"S":"LS";
     let best=null, bd=1e9; pts.filter(p=>p.kind===kind).forEach(p=>{ const dist=Math.hypot(p.x-cx,(p.y-cy)*0.7); if(dist<bd){ bd=dist; best=p; } });
     c.dirBad=false;
+    if(best&&bd<75&&c.t==="sensLS"&&(c.dir==null||c.legacyDir)){ c.dir=best.end===1?"R":"L"; delete c.legacyDir; }
     if(best&&bd<75&&c.t==="sensLS"&&(c.dir||"R")!==(best.end===1?"R":"L")){ c.dirBad=true; c.det=null; return; }
     if(best&&bd<75) map[c.lab]=[best.role,best.end]; c.det=best&&bd<75?best:null; });
   return map;
@@ -1528,7 +1532,7 @@ function analyze(){
   const SRC=net(src,H?"P":"OUT"), TANK=H?net(src,"T"):null;
   const sup=trace(SRC,"supply");
   const rvC=comps.find(c=>c.t==="relief"), suC=comps.find(c=>c.t==="su");
-  const supplyP=H?(rvC?rvC.set:7):(suC?suC.set:0);
+  const supplyP=H?(rvC?(rvC.set??4):7):(suC?(suC.set??0.5):0);
   const pAt=(path)=>{ let p=supplyP; (path||[]).forEach(e=>{ if(e.c.t==="prv"&&e.from==="IN") p=Math.min(p,e.c.set); }); return p; };
   const okR=(v,t,tol)=>Math.abs(v-t)<=tol+1e-9;
   const checks=comps.filter(c=>c.t==="check");
@@ -1844,7 +1848,7 @@ $("hTarget").addEventListener("click",e=>{ const b2=e.target.closest("button"); 
 let wires=[], wcol=store.get("wcol","r"), wpend=null, useWire=true, wzoom=store.get("wzoom",0.6);
 const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":"");
 function saveWire(){ store.set(wKey(),wires); netCache=null; }
-function loadWire(){ wires=store.get(wKey(),[]); netCache=null; }
+function loadWire(){ const w=store.get(wKey(),[]); wires=Array.isArray(w)?w.filter(x=>x&&x.a&&x.b):[]; netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
 let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=650, HS=1.9;
 const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b) return u; return null; };
