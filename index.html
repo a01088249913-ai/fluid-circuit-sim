@@ -1977,10 +1977,20 @@ const wKey=()=>"wire2:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?
 function saveWire(){ store.set(wKey(),wires); netCache=null; if(useWire&&APP.machine&&APP.mode==="build"){ APP.machine.netEval=currentNetEval(); wSig=""; } }
 function loadWire(){ const w=store.get(wKey(),[]); wires=Array.isArray(w)?w.filter(x=>x&&x.a&&x.b):[]; netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
-let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=1180, HY=700, HS=1.9;
-const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b) return u; return null; };
+// compact layout: emergency-stop unit under the power unit, lamp unit under the counter unit
+(function relayout(){ if(HOT.uy) return; const U0=JSON.parse(JSON.stringify(HOT.units)), H=HOT.H, ROW2=H+70, sh=-U0.DC[0];
+  const D={}; Object.keys(U0).forEach(u=>D[u]=[sh,0]); const ctA=U0.CT[0]+sh; D.ES=[0-U0.ES[0],ROW2]; D.LP=[ctA-U0.LP[0],ROW2];
+  const uOf=(x)=>{ let best=null, bd=1e9; for(const [u,[a,b]] of Object.entries(U0)){ const d=x<a?a-x:x>b?x-b:0; if(d<bd){ bd=d; best=u; } } return best; };
+  const mv=(x,y)=>{ const d=D[uOf(x)]; return [x+d[0],y+d[1]]; };
+  Object.values(PJ.J).forEach(j=>{ const [x,y]=mv(j.x,j.y); j.x=x; j.y=y; });
+  ["btn","lamps","ry"].forEach(k=>Object.keys(HOT[k]).forEach(n=>{ const v=HOT[k][n], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; }));
+  ["tdisp","cdisp"].forEach(k=>{ const v=HOT[k], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; });
+  HOT.src={}; HOT.uy={}; Object.entries(U0).forEach(([u,[a,b]])=>{ HOT.src[u]=[a,b]; HOT.units[u]=[a+D[u][0],b+D[u][0]]; HOT.uy[u]=D[u][1]; });
+  HOT.W=Math.max(...Object.values(HOT.units).map(v=>v[1])); HOT.TH=ROW2+H; })();
+let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=560, HY=HOT.H+120, HS=1.9;
+const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b&&j.y>=HOT.uy[u]&&j.y<HOT.uy[u]+HOT.H) return u; return null; };
 function modLabels(){ const N={ES:["비상정지 모듈","#c2410c"],DC:["전원 모듈","#374151"],SG1:["스위치 모듈 1","#15803d"],SG2:["스위치 모듈 2","#15803d"],RY1:["릴레이 모듈 1","#1d4ed8"],RY2:["릴레이 모듈 2","#1d4ed8"],RY3:["릴레이 모듈 3","#1d4ed8"],TM:["타이머 모듈","#7c3aed"],CT:["카운터 모듈","#b45309"],LP:["램프 모듈","#be123c"]};
-  return `<g id="wmods" pointer-events="none">`+Object.entries(HOT.units).map(([u,[a,b]])=>{ const n=N[u]; if(!n) return ""; const cx=(a+b)/2, y=HOT.H+8, tw=Math.min(b-a-16,n[0].length*30+40);
+  return `<g id="wmods" pointer-events="none">`+Object.entries(HOT.units).map(([u,[a,b]])=>{ const n=N[u]; if(!n) return ""; const cx=(a+b)/2, y=HOT.uy[u]+HOT.H+8, tw=Math.min(b-a-16,n[0].length*30+40);
     return `<path d="M${a+6} ${y} v12 H${b-6} v-12" fill="none" stroke="${n[1]}" stroke-width="4"/><rect x="${cx-tw/2}" y="${y+18}" width="${tw}" height="44" rx="22" fill="${n[1]}"/><text x="${cx}" y="${y+50}" font-size="28" font-weight="700" text-anchor="middle" fill="#fff">${n[0]}</text>`; }).join("")+`</g>`; }
 function buildUnits(){
   JACK={}; SW=[]; LOADS=[]; SENS=[]; GROUPS=[];
@@ -2009,10 +2019,10 @@ function buildUnits(){
       if(!lab) return; if(!LBL[lab]) LBL[lab]=base;
       if(c.t==="sensS") SENS.push({bn:base+".BN",bu:base+".BU",bk:base+".BK",name:lab}); else sw(base,(m)=>!!m.sens[lab]); }
   });
-  const W=Math.max(HOT.W,HX+1000*HS+20), Hh=HY+680*HS+20;
+  const W=Math.max(HOT.W,HX+1000*HS+20), Hh=Math.max(HOT.TH+70,HY+680*HS+20);
   const svg=$("wboard"); WB.W=W; WB.H=Hh; svg.removeAttribute("width"); svg.removeAttribute("height"); if(!vb) vbPreset("L"); else applyVB();
   netCache=null;
-  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/>${wArt==="photo"?`<image id="wimg" href="${window.PANELIMG}" x="0" y="0" width="${HOT.W}" height="${HOT.H}" preserveAspectRatio="none"/>`:`<g id="wimg">${panelArt()}</g>`}<g id="whose"></g><g id="wdyn"></g>${modLabels()}`;
+  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/>${wArt==="photo"?`<g id="wimg"><defs><image id="pimgSrc" href="${window.PANELIMG}" x="0" y="0" width="4271" height="${HOT.H}" preserveAspectRatio="none"/></defs>${Object.entries(HOT.units).map(([u,[a,b]])=>{ const [sa]=HOT.src[u]; return `<svg x="${a}" y="${HOT.uy[u]}" width="${b-a}" height="${HOT.H}" viewBox="${sa} 0 ${b-a} ${HOT.H}"><use href="#pimgSrc"/></svg>`; }).join("")}</g>`:`<g id="wimg">${panelArt()}</g>`}<g id="whose"></g><g id="wdyn"></g>${modLabels()}`;
 }
 
 // ---------- physical fluid model: the machine moves exactly as the hoses are connected ----------
@@ -2096,12 +2106,12 @@ function panelArt(){
   const J=PJ.J, U=HOT.units, o=[], H=HOT.H;
   const TITLE={ES:"EMERGENCY SWITCH UNIT",DC:"DC POWER SUPPLY",SG1:"SIGNAL INPUT SWITCH UNIT",SG2:"SIGNAL INPUT SWITCH UNIT",RY1:"RELAY UNIT",RY2:"RELAY UNIT",RY3:"RELAY UNIT",TM:"ON-DELAY TIMER UNIT",CT:"DIGITAL COUNTER UNIT",LP:"BUZZER & LAMP UNIT"};
   const MOD={SG1:"E3001",SG2:"E3001",RY1:"E3004",RY2:"E3004",RY3:"E3004",TM:"E3005",CT:"E3006",LP:"E3009"};
-  o.push(`<rect x="0" y="0" width="${HOT.W}" height="${H}" fill="#3a3f45"/>`);
-  Object.entries(U).forEach(([u,[a,b]])=>{ const w=b-a;
+  Object.entries(U).forEach(([u,[a,b]])=>{ const w=b-a, Y=HOT.uy[u];
+    o.push(`<g transform="translate(0 ${Y})"><rect x="${a}" y="0" width="${w}" height="${H}" fill="#3a3f45"/>`);
     o.push(`<rect x="${a+5}" y="6" width="${w-10}" height="${H-12}" rx="10" fill="${u==="ES"?"#c9c3a6":"#eef0f2"}" stroke="#8b939b" stroke-width="3"/>`);
     [[a+20,22],[b-20,22],[a+20,H-22],[b-20,H-22]].forEach(([x,y])=>o.push(`<circle cx="${x}" cy="${y}" r="7" fill="#b9bfc5" stroke="#7d858d"/>`));
     if(TITLE[u]) o.push(`<text x="${a+w/2}" y="${u==="ES"||u==="DC"?44:H-62}" font-size="${u==="DC"?30:20}" font-weight="700" text-anchor="middle" fill="#2b3036" font-family="Arial,sans-serif" letter-spacing="1">${TITLE[u]}</text>`);
-    if(MOD[u]) o.push(`<text x="${b-24}" y="${H-30}" font-size="18" text-anchor="end" fill="#444" font-family="Arial,sans-serif">sys ${MOD[u]}</text><text x="${a+30}" y="${H-30}" font-size="14" fill="#666" font-family="Arial,sans-serif">INPUT POWER : DC 24V</text>`); });
+    if(MOD[u]) o.push(`<text x="${b-24}" y="${H-30}" font-size="18" text-anchor="end" fill="#444" font-family="Arial,sans-serif">sys ${MOD[u]}</text><text x="${a+30}" y="${H-30}" font-size="14" fill="#666" font-family="Arial,sans-serif">INPUT POWER : DC 24V</text>`); o.push("</g>"); });
   // printed bus lines (+ top / − bottom)
   const bus=(re,col)=>{ const g={}; Object.entries(J).forEach(([k,j])=>{ const m=k.match(re); if(m){ (g[m[1]]=g[m[1]]||[]).push(j); } }); Object.values(g).forEach(js=>{ js.sort((p,q)=>p.x-q.x); if(js.length>1) o.push(`<polyline points="${js.map(j=>j.x+","+j.y).join(" ")}" fill="none" stroke="${col}" stroke-width="3"/>`); }); };
   bus(/^(\w+)\.BP\d$/,"#d14b40"); bus(/^(\w+)\.BN\d$/,"#3d63c9");
@@ -2373,7 +2383,7 @@ function applyVB(){ if(!vb) return; const a=vbAspect(); vb.w=Math.max(300,Math.m
   vb.x=Math.max(-vb.w*0.3,Math.min(WB.W-vb.w*0.7,vb.x)); vb.y=Math.max(-h*0.3,Math.min(WB.H-h*0.7,vb.y));
   $("wboard").setAttribute("viewBox",`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${h.toFixed(1)}`); }
 function vbFit(x,y,w,h){ const a=vbAspect(); const ww=Math.max(w,h/a); vb={x:x+(w-ww)/2,y:ww*a>h?y-Math.min(40,(ww*a-h)/2):y+(h-ww*a)/2,w:ww,fresh:$("wboard").getBoundingClientRect().width===0}; applyVB(); }
-function vbPreset(k){ if(k==="all") vbFit(0,0,WB.W,WB.H); else if(k==="top") vbFit(0,0,HOT.W,HOT.H); else if(k==="L") vbFit(0,0,HOT.W/2+60,HOT.H); else if(k==="R") vbFit(HOT.W/2-60,0,HOT.W/2+60,HOT.H); else if(k==="hose") vbFit(HX-10,HY-10,1000*HS+20,680*HS+20);
+function vbPreset(k){ if(k==="all") vbFit(0,0,WB.W,WB.H); else if(k==="top") vbFit(0,0,HOT.W,HOT.TH); else if(k==="L") vbFit(0,0,HOT.W/2+60,HOT.H); else if(k==="R") vbFit(HOT.W/2-60,0,HOT.W/2+60,HOT.H); else if(k==="hose") vbFit(HX-10,HY-10,1000*HS+20,680*HS+20);
   document.querySelectorAll("#wZoom button[data-v]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===k)); }
 function vbZoom(f,cx,cy){ if(!vb) return; const r=$("wboard").getBoundingClientRect(); const px=cx==null?0.5:(cx-r.left)/r.width, py=cy==null?0.5:(cy-r.top)/r.height; const h=vb.w*vbAspect();
   const sx=vb.x+px*vb.w, sy=vb.y+py*h; vb.w/=f; const nh=vb.w*vbAspect(); vb.x=sx-px*vb.w; vb.y=sy-py*nh; applyVB(); document.querySelectorAll("#wZoom button[data-v]").forEach(x=>x.setAttribute("aria-pressed","false")); }
