@@ -327,8 +327,9 @@ details.sheetbox[open] summary{margin-bottom:10px}
 // ===== Ladder + actuator simulation engine =====
 (function (root) {
   "use strict";
-  const DT = 10; // ms per tick
-  const SOL_DELAY = 5; // solenoid valve response: 50 ms of continuous energizing to shift (relay contact delay = 1 tick)
+  const DT = 5; // ms per tick
+  const PS_T = Math.round(250 / DT);
+  const SOL_DELAY = 6; // solenoid valve response: 30 ms of continuous energizing to shift (relay contact delay = 1 tick = 5 ms)
 
   // ---------- parser ----------
   // expr := seq ('|' seq)* ; seq := atom+ ; atom := '(' expr ')' | ['/']LABEL
@@ -429,7 +430,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
     opts = opts || {};
     this.p = opts.sensors ? Object.assign({}, problem, { sensors: opts.sensors }) : problem;
     this.L = ladder;
-    this.stroke = opts.stroke || 1200; // ms per full stroke
+    this.stroke = opts.stroke || 2000; // ms per full stroke
     this.plumb = opts.plumb || {};
     this.speed = opts.speed || {};
     this.netEval = opts.netEval || null;
@@ -461,7 +462,7 @@ details.sheetbox[open] summary{margin-bottom:10px}
       const x = this.pos[a];
       s[k] = end === 1 ? x >= 0.97 : x <= 0.03;
     }
-    if (this.p.ps) s.PS = this.psCnt >= 25; // ~250ms of holding pressure
+    if (this.p.ps) s.PS = this.psCnt >= PS_T; // ~250ms of holding pressure
     this.sens = s;
   };
   Machine.prototype.val = function (l) {
@@ -541,8 +542,8 @@ details.sheetbox[open] summary{margin-bottom:10px}
     if (p.ps) {
       const a = p.ps; const pushing = this.valve[a] === 1 && this.pos[a] >= 0.999;
       const prev = this.psCnt;
-      this.psCnt = pushing ? Math.min(this.psCnt + 1, 100) : 0;
-      if ((prev >= 25) !== (this.psCnt >= 25)) changed = true;
+      this.psCnt = pushing ? Math.min(this.psCnt + 1, PS_T * 4) : 0;
+      if ((prev >= PS_T) !== (this.psCnt >= PS_T)) changed = true;
     }
     this.computeSensors();
     this.t += DT;
