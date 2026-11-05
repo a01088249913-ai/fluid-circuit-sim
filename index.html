@@ -1860,11 +1860,15 @@ function compLabel(c){
   if(c.t==="cyl"||c.t==="motor") return `${c.t==="cyl"?"실린더":"모터"} ${c.role||"?"}`;
   return "";
 }
+// aluminium profile work plate (T-slot every 40)
+function profDefs(id){ return `<linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e9edf0"/><stop offset=".45" stop-color="#d3d9de"/><stop offset="1" stop-color="#bcc4cb"/></linearGradient>
+  <pattern id="${id}" width="1000" height="40" patternUnits="userSpaceOnUse"><rect width="1000" height="40" fill="url(#${id}g)"/><rect y="17" width="1000" height="7" fill="#7d868f"/><rect y="18.5" width="1000" height="4" fill="#4b535b"/><rect y="16" width="1000" height="1.2" fill="#f7f9fa"/><rect y="24" width="1000" height="1" fill="#9aa3ab"/><rect y="39" width="1000" height="1" fill="#a7b0b8"/></pattern>`; }
+function profBg(id,x,y,w,h){ return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="url(#${id})" stroke="#8a939b" stroke-width="3"/><rect x="${x}" y="${y}" width="10" height="${h}" fill="#aab3bb"/><rect x="${x+w-10}" y="${y}" width="10" height="${h}" fill="#aab3bb"/>`; }
 function renderBoard(){
   const res=analyze(); lastPlumb=res.plumb; lastSpeed=res.speed; lastSens=res.smap; APP.setPlumb(res.plumb,res.speed,res.smap);
   const H=isH(), o=[];
-  o.push(`<defs><pattern id="gridp" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="var(--line)"/></pattern><linearGradient id="gSil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#b9c1c9"/><stop offset="1" stop-color="#e3e7eb"/></linearGradient></defs>`);
-  o.push(`<rect width="1000" height="680" fill="url(#gridp)"/>`);
+  o.push(`<defs><pattern id="gridp" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="var(--line)"/></pattern><linearGradient id="gSil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#b9c1c9"/><stop offset="1" stop-color="#e3e7eb"/></linearGradient>${profDefs("profB")}</defs>`);
+  o.push(profBg("profB",0,0,1000,680));
   comps.forEach(c=>{ const d=T[c.t];
     o.push(`<g class="comp" data-cid="${c.id}" transform="translate(${c.x},${c.y})">${sel===c.id?`<rect x="-5" y="-14" width="${d.w+10}" height="${d.h+30}" rx="8" fill="none" stroke="var(--minus)" stroke-dasharray="4 3"/>`:""}<rect class="body" x="0" y="0" width="${d.w}" height="${d.h}" fill="transparent"/>${partArt(c.t,d.w,d.h,view==="sym",c)}${solOverlay(c)}${sensOverlay(c)}${T[c.t].adj?"":setOverlay(c)}`);
     const lab=compLabel(c); if(lab) o.push(`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="var(--minus)">${lab}</text>`);
@@ -2310,9 +2314,9 @@ function wireCheck(){
 function renderWire(){
   const m=APP.machine, ne=useWire?m.netEval:null, st=ne&&ne.last;
   // hose board (scaled) under the photo
-  const hb=[`<g transform="translate(${HX},${HY}) scale(${HS})"><rect x="-10" y="-10" width="1020" height="700" rx="10" fill="#f6f8fa" stroke="#c4cbd2"/><text x="6" y="10" font-size="13" font-weight="700" fill="#5b6876">배관 회로도 (부품 배치·배관 탭에서 꾸민 그대로) — 솔레노이드·센서 단자에 전선을 꽂으세요</text>`];
+  const hb=[`<g transform="translate(${HX},${HY}) scale(${HS})"><defs>${profDefs("profW")}</defs>${profBg("profW",-10,-10,1020,700)}<text x="14" y="10" font-size="13" font-weight="700" fill="#2b3036" stroke="#e9edf0" stroke-width="3" paint-order="stroke">배관 회로도 (부품 배치·배관 탭에서 꾸민 그대로) — 솔레노이드·센서 단자에 전선을 꽂으세요</text>`];
   const pp=(k)=>{ const [id,pt]=k.split("."); const c=comps.find(x=>x.id===+id); if(!c) return null; const q=T[c.t].ports[pt]; return [c.x+q[0],c.y+q[1]]; };
-  hoses.forEach(h=>{ const a=pp(h.a), c2=pp(h.b); if(!a||!c2) return; hb.push(`<path d="M${a[0]} ${a[1]} C${a[0]} ${a[1]+50} ${c2[0]} ${c2[1]+50} ${c2[0]} ${c2[1]}" fill="none" stroke="#7d8690" stroke-width="2.6" opacity=".75"/>`); });
+  hoses.forEach(h=>{ const a=pp(h.a), c2=pp(h.b); if(!a||!c2) return; hb.push(`<path d="M${a[0]} ${a[1]} C${a[0]} ${a[1]+50} ${c2[0]} ${c2[1]+50} ${c2[0]} ${c2[1]}" fill="none" stroke="#2f363d" stroke-width="2.8" opacity=".85"/>`); });
   comps.forEach(c=>{ const d=T[c.t]; hb.push(`<g transform="translate(${c.x},${c.y})">${partArt(c.t,d.w,d.h,false,c)}${solOverlay(c)}${sensOverlay(c)}${setOverlay(c,1)}${(c.t==="cyl"||c.t==="motor")?`<text x="${d.w-4}" y="-4" font-size="12" font-weight="700" text-anchor="end" fill="#1d4fd0">${compLabel(c)}</text>`:""}</g>`); });
   if(!comps.length) hb.push(`<text x="500" y="340" font-size="22" text-anchor="middle" fill="#8a939c">먼저 「배관」 탭에서 부품을 배치하세요 (또는 모범 배관 보기)</text>`);
   hb.push(`</g>`); $("whose").innerHTML=hb.join("");
