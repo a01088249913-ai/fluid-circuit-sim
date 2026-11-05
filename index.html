@@ -1818,33 +1818,86 @@ const MET="#c9ced4", MET2="#8d959e", BODY="#22272d", PLATE="#e3e7eb", PLATE2="#c
 function partArt(t,w,h,sym,c){
   const o=[];
   const label=(txt,y)=>o.push(`<text x="${w/2}" y="${y}" font-size="9" text-anchor="middle" fill="${sym?"var(--muted)":"#4a525b"}" font-family="var(--mono)">${esc(txt)}</text>`);
-  if(sym){ // ISO-like symbols
-    const st=`stroke="var(--ink)" stroke-width="1.4" fill="none"`;
-    if(t==="cyl"){ const ps=20+pos(c)*120, cid=c?c.id:0; o.push(`<rect x="14" y="14" width="140" height="30" ${st} fill="var(--card)"/><g id="an${cid}" data-k="cyls" transform="translate(${ps-20} 0)"><line x1="20" y1="14" x2="20" y2="44" stroke="var(--ink)" stroke-width="3"/><line x1="20" y1="29" x2="196" y2="29" stroke="var(--ink)" stroke-width="4"/></g>`); }
-    else if(t==="motor"){ const cid=c?c.id:0; o.push(`<circle cx="66" cy="42" r="28" ${st} fill="var(--card)"/><g id="an${cid}" data-k="mot" data-cx="66" data-cy="42" transform="rotate(${ang(c)} 66 42)"><line x1="66" y1="42" x2="66" y2="22" stroke="#c22" stroke-width="2.5"/><circle cx="66" cy="22" r="2.5" fill="#c22"/></g><path d="M60 16 l6 9 l6-9z M60 68 l6-9 l6 9z" fill="var(--ink)"/><path d="M40 20 a34 34 0 0 1 52 0" ${st}/><line x1="18" y1="22" x2="56" y2="22" stroke="var(--ink)"/><line x1="18" y1="62" x2="56" y2="62" stroke="var(--ink)"/>`); }
-    else if(/^v/.test(t)){ const pos=T[t].pos||2, bw=34, x0=(w-pos*bw)/2, y0=28;
-      for(let i=0;i<pos;i++) o.push(`<rect x="${x0+i*bw}" y="${y0}" width="${bw}" height="40" ${st} fill="var(--card)"/>`);
-      const bx=(i)=>x0+i*bw;
-      // left box parallel, right box crossed, center blocked
-      o.push(`<path d="M${bx(0)+10} ${y0+36} V${y0+6} M${bx(0)+10} ${y0+6} l-3 6 h6z M${bx(0)+24} ${y0+6} V${y0+34} M${bx(0)+24} ${y0+34} l-3 -6 h6z" stroke="var(--ink)" fill="var(--ink)"/>`);
-      const r=pos-1; o.push(`<path d="M${bx(r)+8} ${y0+36} L${bx(r)+26} ${y0+6} M${bx(r)+26} ${y0+36} L${bx(r)+8} ${y0+6}" stroke="var(--ink)"/>`);
-      if(pos===3) o.push(t==="v43abt"?`<path d="M${bx(1)+10} ${y0+6} V${y0+22} H${bx(1)+24} V${y0+6} M${bx(1)+17} ${y0+22} V${y0+36}" stroke="var(--ink)" fill="none"/>`:`<path d="M${bx(1)+6} ${y0+8} h8 M${bx(1)+20} ${y0+8} h8 M${bx(1)+6} ${y0+32} h8 M${bx(1)+20} ${y0+32} h8 M${bx(1)+10} ${y0+8} v6 M${bx(1)+24} ${y0+8} v6 M${bx(1)+10} ${y0+32} v-6 M${bx(1)+24} ${y0+32} v-6" stroke="var(--ink)"/>`);
-      o.push(`<rect x="${x0-16}" y="${y0+12}" width="16" height="16" ${st} fill="var(--card)"/><line x1="${x0-14}" y1="${y0+26}" x2="${x0-2}" y2="${y0+14}" stroke="var(--ink)"/>`);
-      if(T[t].sol===2) o.push(`<rect x="${x0+pos*bw}" y="${y0+12}" width="16" height="16" ${st} fill="var(--card)"/><line x1="${x0+pos*bw+2}" y1="${y0+26}" x2="${x0+pos*bw+14}" y2="${y0+14}" stroke="var(--ink)"/>`);
-      else o.push(`<path d="M${x0+pos*bw} ${y0+20} l4 -6 l4 12 l4 -12 l4 12 l4 -6" ${st}/>`);
-      Object.entries(T[t].ports).forEach(([p,[px,py]])=>o.push(`<line x1="${px}" y1="${py}" x2="${px}" y2="${py<50?y0:y0+40}" stroke="var(--ink)"/>`));
+  if(sym){ // ISO 1219 symbols drawn like the problem sheets (FluidSIM style)
+    const K="var(--ink)", F="var(--card)", st=`stroke="${K}" stroke-width="1.4" fill="none"`, H=isH();
+    const L=(x1,y1,x2,y2,sw)=>o.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${K}" stroke-width="${sw||1.4}"/>`);
+    const arrowTo=(x1,y1,x2,y2)=>{ const a=Math.atan2(y2-y1,x2-x1), s=7, b=0.42; L(x1,y1,x2,y2); o.push(`<path d="M${x2} ${y2} L${x2-s*Math.cos(a-b)} ${y2-s*Math.sin(a-b)} L${x2-s*Math.cos(a+b)} ${y2-s*Math.sin(a+b)}Z" fill="${K}"/>`); };
+    const tee=(x,y,up)=>{ L(x,y,x,y+(up?-8:8)); L(x-5,y+(up?-8:8),x+5,y+(up?-8:8),1.8); };          // blocked port ⊥/⊤
+    const spring=(x,y,dir,len)=>{ len=len||28; let d=`M${x} ${y}`; const n=6, st2=len/n; for(let i=1;i<=n;i++) d+=` L${x+dir*st2*i} ${y+(i%2?-7:7)}`; o.push(`<path d="${d}" ${st}/>`); };
+    const exhaustTri=(x,y)=>o.push(`<path d="M${x-6} ${y} L${x+6} ${y} L${x} ${y+9}Z" ${st} fill="${F}"/>`);
+    const tank=(x,y)=>o.push(`<path d="M${x-9} ${y} V${y+8} H${x+9} V${y}" ${st}/>`);
+    if(t==="cyl"){ const ps=20+pos(c)*120, cid=c?c.id:0;
+      o.push(`<rect x="14" y="14" width="140" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      if(!H){ o.push(`<rect x="14" y="18" width="10" height="22" ${st}/>`); arrowTo(8,40,30,20); }                         // adjustable cushion (pneumatic)
+      o.push(`<g id="an${cid}" data-k="cyls" transform="translate(${ps-20} 0)"><rect x="17" y="14" width="6" height="30" fill="${F}" stroke="${K}" stroke-width="1.4"/><path d="M20 9 l3 3 l-3 3 l-3 -3z M20 43 l3 3 l-3 3 l-3 -3z" ${st} fill="${F}"/><rect x="23" y="26" width="173" height="6" fill="${F}" stroke="${K}" stroke-width="1.2"/></g>`);
+      [[26,"cap"],[150,"rod"]].forEach(([x])=>o.push(H?`<path d="M${x-5} 22 L${x+5} 22 L${x} 14Z" fill="${K}"/>`:`<path d="M${x-5} 22 L${x+5} 22 L${x} 14Z" ${st} fill="${F}"/>`));
+      L(26,10,26,14); L(150,10,150,14); }
+    else if(t==="motor"){ const cid=c?c.id:0;
+      o.push(`<circle cx="66" cy="42" r="26" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      o.push(`<path d="M40 42 l9 -6 v12z M92 42 l-9 -6 v12z" fill="${K}"/>`);                                                   // bidirectional motor triangles
+      o.push(`<path d="M18 22 H30 V42 H40 M18 62 H30 V62 M30 62 H104 V42 H92" ${st}/>`);
+      o.push(`<rect x="60" y="2" width="12" height="14" ${st}/><path d="M44 12 q22 -14 44 0" ${st}/><path d="M44 12 l2 -8 M44 12 l8 -1 M88 12 l-2 -8 M88 12 l-8 -1" ${st}/>`);
+      o.push(`<g id="an${cid}" data-k="mot" data-cx="66" data-cy="42" transform="rotate(${ang(c)} 66 42)"><line x1="66" y1="42" x2="66" y2="24" stroke="#c22" stroke-width="2"/></g>`); }
+    else if(/^v/.test(t)){
+      const d=T[t], P3=d.pos===3, two=d.sol===2, bw=70, by=30, bh=40, ports=d.ports;
+      const rest=P3?(w/2-bw/2):(t==="v22"?ports.A[0]-28:(ports.A[0]+ports.B[0])/2-bw/2);
+      const BW=t==="v22"?56:bw, nB=P3?3:2, x0=rest-(P3?BW:BW);       // left edge of drawn boxes
+      for(let i=0;i<nB;i++) o.push(`<rect x="${x0+i*BW}" y="${by}" width="${BW}" height="${bh}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      const top=by, bot=by+bh, A=ports.A&&ports.A[0], B=ports.B&&ports.B[0];
+      // which box sits under the ports: the rest box (spring side / centre)
+      const bxIdx=P3?1:1, off=(i)=>(i-bxIdx)*BW;  // offset of box i relative to the rest box
+      const ex=(dx)=>dx;
+      if(t==="v52s"||t==="v52d"){ const Rx=A+5, Px=ports.P[0], Sx=B-5;
+        // rest box: A→R (down), P→B (up)
+        arrowTo(A,top+3,Rx,bot-1); arrowTo(Px,bot,B,top+1); tee(Sx,bot,true);
+        // energised box (left)
+        const s=off(0); arrowTo(Px+s,bot,A+s,top+1); arrowTo(B+s,top+3,Sx+s,bot-1); tee(Rx+s,bot,true);
+        exhaustTri(Rx,bot+4); exhaustTri(Sx,bot+4); L(Rx,bot,Rx,bot+4); L(Sx,bot,Sx,bot+4); }
+      else if(t==="v42s"||t==="v42d"){ const Px=ports.P[0], Tx=ports.T[0];
+        arrowTo(Px,bot,B,top+1); arrowTo(A,top,Tx,bot-1);                    // rest: crossed P→B, A→T
+        const s=off(0); arrowTo(Px+s,bot,A+s,top+1); arrowTo(B+s,top,Tx+s,bot-1); }  // energised: parallel
+      else if(P3){ const Px=ports.P[0], Tx=ports.T[0];
+        if(t==="v43"){ tee(A,top,false); tee(B,top,false); tee(Px,bot,true); tee(Tx,bot,true); }
+        else { const yj=top+22; L(A,top,A,yj); L(B,top,B,yj); L(A,yj,B,yj); L(Tx,yj,Tx,bot); tee(Px,bot,true); o.push(`<circle cx="${Tx}" cy="${yj}" r="2.5" fill="${K}"/>`); }
+        const sl=off(0); arrowTo(Px+sl,bot,A+sl,top+1); arrowTo(B+sl,top,Tx+sl,bot-1);    // left: parallel (Y1)
+        const sr=off(2); arrowTo(Px+sr,bot,B+sr,top+1); arrowTo(A+sr,top,Tx+sr,bot-1); }   // right: crossed (Y2)
+      else if(t==="v22"){ const Px=ports.P[0]; tee(A,top,false); tee(Px,bot,true); const s=off(0); arrowTo(Px+s,bot,A+s,top+1); }
+      // actuators
+      const left=x0, right=x0+nB*BW;
+      const solBox=(x,dir)=>{ const xs=dir<0?x-30:x; o.push(`<rect x="${xs}" y="${by+bh/2}" width="30" height="${bh/2}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(xs+(dir<0?8:22),bot-2,xs+(dir<0?22:8),by+bh/2+2);
+        L(xs,by+5,xs+30,by+5); L(xs,by+11,xs+30,by+11); L(dir<0?xs:xs+30,by+1,dir<0?xs:xs+30,by+bh/2); };      // manual override lines
+      const pilot=(x,dir)=>{ const xs=dir<0?x-22:x; o.push(`<rect x="${xs}" y="${by}" width="22" height="${bh}" stroke="${K}" stroke-width="1.4" fill="${F}"/><path d="${dir<0?`M${xs+5} ${by+10} L${xs+18} ${by+20} L${xs+5} ${by+30}Z`:`M${xs+17} ${by+10} L${xs+4} ${by+20} L${xs+17} ${by+30}Z`}" ${st}/>`); return dir<0?xs:xs+22; };
+      if(!H){ const lx=pilot(left,-1); solBox(lx,-1); if(two){ const rx=pilot(right,1); solBox(rx,1); } else spring(right,by+bh/2,1); }
+      else { if(P3){ spring(left,by+bh/4,-1,26); solBox(left,-1); spring(right,by+bh/4,1,26); solBox(right,1); }
+        else { solBox(left,-1); if(two) solBox(right,1); else spring(right,by+bh/2,1); } }
+      Object.entries(ports).forEach(([p,[px,py]])=>{ if(py<50) L(px,py,px,top); else L(px,bot,px,py); });
     }
-    else if(t==="pu"){ o.push(`<circle cx="70" cy="60" r="20" ${st} fill="var(--card)"/><path d="M64 46 l6-8 l6 8z" fill="var(--ink)"/><circle cx="135" cy="60" r="16" ${st}/><text x="135" y="64" font-size="12" text-anchor="middle" fill="var(--ink)">M</text><line x1="90" y1="60" x2="119" y2="60" stroke="var(--ink)" stroke-width="2"/><line x1="70" y1="14" x2="70" y2="40" stroke="var(--ink)"/><path d="M40 100 v20 h120 v-20" ${st}/><line x1="70" y1="80" x2="70" y2="112" stroke="var(--ink)"/><line x1="120" y1="14" x2="120" y2="112" stroke="var(--ink)"/>`); }
-    else if(t==="su"){ o.push(`<rect x="20" y="22" width="80" height="40" ${st} fill="var(--card)"/><path d="M40 22 l20 20 l20-20 M30 42 h30" stroke="var(--ink)" fill="none"/><line x1="100" y1="42" x2="106" y2="42" stroke="var(--ink)"/><circle cx="60" cy="88" r="14" ${st}/><path d="M60 88 l8-8" stroke="var(--ink)"/>`); }
-    else if(t==="relief"||t==="prv"||t==="cbv"||t==="ps"){ o.push(`<rect x="${w/2-18}" y="10" width="36" height="34" ${st} fill="var(--card)"/><path d="M${w/2} 40 V16 l-3 6 h6z" stroke="var(--ink)" fill="var(--ink)"/><path d="M${w/2+18} 27 l4-4 l4 8 l4-8" ${st}/>`); }
-    else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="22" ${st} fill="var(--card)"/><path d="M28 44 L48 24 l-7 1 l6 6z" stroke="var(--ink)" fill="var(--ink)"/><line x1="38" y1="56" x2="38" y2="78" stroke="var(--ink)"/>`); }
-    else if(t==="distP"||t==="distT"){ o.push(`<line x1="16" y1="24" x2="${w-16}" y2="24" stroke="var(--ink)" stroke-width="2"/>`); }
-    else if(t==="sensS"){ o.push(`<path d="M32 6 L50 24 L32 42 L14 24 Z" stroke="var(--ink)" stroke-width="1.4" fill="var(--card)"/><path d="M24 24 h16 M28 18 v12 M36 18 v12" stroke="var(--ink)"/>`); }
-    else if(t==="sensLS"){ o.push(`<rect x="18" y="12" width="40" height="26" stroke="var(--ink)" stroke-width="1.4" fill="var(--card)"/><path d="M22 32 L54 18" stroke="var(--ink)"/><line x1="38" y1="38" x2="38" y2="50" stroke="var(--ink)"/><circle cx="38" cy="54" r="5" stroke="var(--ink)" fill="var(--card)"/>`); }
-    else if(t==="tee"){ o.push(`<path d="M16 30 H94 M42 30 V52 M68 30 V52" stroke="var(--ink)" stroke-width="1.6" fill="none"/><circle cx="42" cy="30" r="3" fill="var(--ink)"/><circle cx="68" cy="30" r="3" fill="var(--ink)"/>`); }
-    else if(t==="check"||t==="pcheck"){ o.push(`<line x1="14" y1="${h/2}" x2="${w-14}" y2="${h/2}" stroke="var(--ink)"/><circle cx="${w/2-4}" cy="${h/2}" r="7" ${st} fill="var(--card)"/><path d="M${w/2+4} ${h/2-10} L${w/2+4} ${h/2+10}" stroke="var(--ink)" stroke-width="2"/>`); if(t==="pcheck") o.push(`<line x1="48" y1="${h/2+8}" x2="48" y2="54" stroke="var(--ink)" stroke-dasharray="3 2"/>`); }
-    else if(t==="fcv1"||t==="fcv2"){ o.push(`<line x1="14" y1="26" x2="82" y2="26" stroke="var(--ink)"/><path d="M38 16 q10 10 0 20 M58 16 q-10 10 0 20" ${st}/><path d="M30 40 L66 12" stroke="var(--ink)"/>`); if(t==="fcv1") o.push(`<circle cx="48" cy="44" r="4" ${st}/>`); }
-    else if(t==="qev"){ o.push(`<rect x="24" y="12" width="48" height="28" ${st} fill="var(--card)"/><path d="M48 40 v10 M42 50 h12" stroke="var(--ink)"/>`); }
+    else if(t==="pu"){ o.push(`<rect x="10" y="22" width="170" height="100" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="6 4"/>`);
+      o.push(`<circle cx="70" cy="62" r="18" stroke="${K}" stroke-width="1.4" fill="${F}"/><path d="M63 50 L77 50 L70 44Z" fill="${K}"/><circle cx="135" cy="62" r="14" ${st}/><text x="135" y="66" font-size="12" text-anchor="middle" fill="${K}">M</text>`); L(88,62,121,62,2.2); L(70,14,70,44); L(70,80,70,104); tank(70,104); L(120,14,120,104); tank(120,104); }
+    else if(t==="su"){ // FRL service unit (simplified detail symbol)
+      o.push(`<rect x="12" y="20" width="88" height="44" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="5 3"/><path d="M30 26 L42 42 L30 58 L18 42Z" ${st} fill="${F}"/>`); L(22,42,38,42); L(30,30,30,54,1); 
+      o.push(`<rect x="50" y="28" width="22" height="28" ${st} fill="${F}"/>`); arrowTo(54,52,68,32); spring(72,42,1,8);
+      o.push(`<path d="M86 26 L98 42 L86 58 L74 42Z" ${st} fill="${F}"/>`); L(86,32,86,52); L(4,42,12,42); L(100,42,106,42); o.push(`<circle cx="60" cy="90" r="12" ${st}/>`); arrowTo(54,96,66,84); L(60,64,60,78); }
+    else if(t==="relief"||t==="prv"||t==="cbv"||t==="ps"){ const bx=w/2-18, bxx=36;
+      o.push(`<rect x="${bx}" y="14" width="${bxx}" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); spring(w/2,44,1,1); o.push(`<path d="M${w/2-6} 46 l12 4 l-12 4 l12 4" ${st}/>`);
+      if(t==="ps"){ o.push(`<rect x="${bx}" y="14" width="${bxx}" height="30" stroke="${K}" fill="${F}"/><path d="M${bx+6} 22 h8 l8 -6 M${bx+24} 22 h6" ${st}/><circle cx="${bx+14}" cy="22" r="1.6" fill="${K}"/>`); L(w/2,44,w/2,52); }
+      else if(t==="relief"){ arrowTo(bx+bxx-4,22,bx+6,22); o.push(`<path d="M${bx} 30 H${bx-14} V8 H${w/2} V14" ${st} stroke-dasharray="4 3"/>`); L(28,80,28,30); L(28,30,bx,30); L(68,80,68,30); L(68,30,bx+bxx,30); }
+      else { arrowTo(bx+6,29,bx+bxx-4,29); o.push(`<path d="M${t==="prv"?bx+bxx:bx} 29 H${t==="prv"?bx+bxx+8:bx-8} V8 H${w/2} V14" ${st} stroke-dasharray="4 3"/>`); L(14,30,bx,30); L(bx+bxx,30,82,30);
+        if(t==="cbv"){ o.push(`<path d="M${bx-4} 30 V52 H${bx+bxx+4} V30" ${st}/><circle cx="${w/2+2}" cy="52" r="4" ${st} fill="${F}"/><path d="M${w/2-6} 47 L${w/2-2} 52 L${w/2-6} 57" ${st}/>`); } } }
+    else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="20" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); arrowTo(30,44,46,24); L(38,54,38,78); }
+    else if(t==="distP"||t==="distT"){ L(16,24,w-16,24,2); }
+    else if(t==="sensS"){ o.push(`<path d="M32 6 L50 24 L32 42 L14 24 Z" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(28,15,28,33); L(36,15,36,33); L(14,46,50,46,1.2); o.push(`<path d="M32 40 l3 3 l-3 3 l-3 -3z" ${st}/>`); }
+    else if(t==="sensLS"){ o.push(`<rect x="18" y="12" width="36" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(18,12,54,42); o.push(`<path d="M24 20 h8 l8 -4 M42 20 h6" ${st}/><circle cx="32" cy="20" r="1.6" fill="${K}"/>`); spring(36,12,1,1); o.push(`<path d="M30 10 l6 -4 l-6 -4 l6 -4" ${st}/>`); o.push(`<path d="M30 42 V52 a6 6 0 0 0 12 0 V42" ${st} fill="${F}"/>`); }
+    else if(t==="tee"){ o.push(`<path d="M16 30 H94 M42 30 V52 M68 30 V52" stroke="${K}" stroke-width="1.6" fill="none"/><circle cx="42" cy="30" r="3" fill="${K}"/><circle cx="68" cy="30" r="3" fill="${K}"/>`); }
+    else if(t==="check"||t==="pcheck"){ const y=h/2;
+      L(14,y,w/2-10,y); L(w/2+10,y,w-14,y);
+      o.push(`<path d="M${w/2-12} ${y-10} L${w/2+2} ${y} L${w/2-12} ${y+10}" ${st}/><circle cx="${w/2+2}" cy="${y}" r="7" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);   // seat + ball: free flow IN→OUT
+      if(t==="check") o.push(`<path d="M${w/2+10} ${y} l3 -5 l3 10 l3 -10 l3 10 l3 -5" ${st}/>`);
+      else { o.push(`<rect x="${w/2-18}" y="${y-16}" width="40" height="32" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`); L(48,y+16,48,54); o.push(`<path d="M48 ${y+12} l-4 -6 h8z" fill="${K}"/>`); } }
+    else if(t==="fcv1"||t==="fcv2"){ const y=26; L(14,y,36,y); L(60,y,82,y);
+      o.push(`<path d="M38 ${y-10} q10 10 0 20 M58 ${y-10} q-10 10 0 20" ${st}/>`); arrowTo(32,y+14,64,y-14);
+      if(t==="fcv1"){ o.push(`<path d="M24 ${y} V${y+18} H72 V${y}" ${st}/><path d="M42 ${y+12} L52 ${y+18} L42 ${y+24}" ${st}/><circle cx="54" cy="${y+18}" r="5" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); } }
+    else if(t==="qev"){ L(14,26,34,26); L(62,26,82,26); o.push(`<rect x="34" y="14" width="28" height="24" ${st} fill="${F}"/><circle cx="48" cy="26" r="5" ${st}/>`); L(48,38,48,44); exhaustTri(48,44); }
     label(T[t].n,h-2);
     return o.join("");
   }
@@ -1974,7 +2027,7 @@ function buildModel(sp,m){
   // chain helper: from key → list of [comp, inPort, outPort] → to key
   const chain=(from,items,to)=>{ let cur=from; items.forEach(([c,a,b2])=>{ link(cur,P(c,a)); cur=P(c,b2); }); link(cur,to); };
   sp.act.forEach((a,i)=>{ const x0=30+i*480;
-    if(a.kind==="cyl"){ const c=addComp("cyl",x0,90,a.id); const v=addComp(reqValve(a)[0],x0+20,330);
+    if(a.kind==="cyl"){ const c=addComp("cyl",x0,90,a.id); const v=addComp(reqValve(a)[0],x0+80,330);
       const aT=a.valve.type==="single"&&a.valve.dir<0?"rod":"cap", bT=aT==="cap"?"rod":"cap";
       const vport={}; vport[aT]="A"; vport[bT]="B";
       const capItems=[], rodItems=[]; let xs=x0;
@@ -1996,8 +2049,8 @@ function buildModel(sp,m){
       chain(supKey(),pItems,P(v,"P")); if(H) link(P(v,"T"),tankKey());
     }
     else { const mo=addComp("motor",x0,90,a.id); const plan=motorPlan(a);
-      if(plan.kind==="single"){ const v=addComp(plan.vt[0],x0+20,330); const ck=addComp("check",x0+190,120); link(P(v,"A"),P(mo,"M1")); link(P(mo,"M2"),P(ck,"IN")); link(P(ck,"OUT"),tankKey()); link(P(v,"P"),supKey()); if(v.t==="v42s") link(P(v,"T"),tankKey()); }
-      else { const v=addComp("v42s",x0+20,300); const r=addComp("v22",x0+220,420); link(P(v,"A"),P(mo,"M2")); link(P(v,"B"),P(mo,"M1")); link(P(r,"A"),P(v,"P")); link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
+      if(plan.kind==="single"){ const v=addComp(plan.vt[0],x0+80,330); const ck=addComp("check",x0+190,120); link(P(v,"A"),P(mo,"M1")); link(P(mo,"M2"),P(ck,"IN")); link(P(ck,"OUT"),tankKey()); link(P(v,"P"),supKey()); if(v.t==="v42s") link(P(v,"T"),tankKey()); }
+      else { const v=addComp("v42s",x0+80,300); const r=addComp("v22",x0+220,420); link(P(v,"A"),P(mo,"M2")); link(P(v,"B"),P(mo,"M1")); link(P(r,"A"),P(v,"P")); link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
   });
   Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; const sc2=addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); if(t==="sensLS") sc2.dir=end===1?"R":"L"; });
   comps.forEach(c=>{ if(T[c.t].adj) c.set={su:0.5,relief:4.0,prv:H?2.0:0.3,cbv:3.0,ps:3.0}[c.t]; });
