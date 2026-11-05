@@ -306,6 +306,16 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     <div class="col" id="ladCol">
       <div class="card">
         <div class="card-h"><h2 id="ladTitle">전기회로도</h2><span class="sub" id="ladHint"></span></div>
+        <div id="mEd" hidden>
+          <div class="btool"><div class="seg" id="mSeg"><button data-e="1">내 회로 편집</button><button data-e="0">예시 회로 보기</button></div></div>
+          <div id="mEdBody">
+            <div class="small" style="margin:2px 0 6px;color:var(--muted)">기본동작 정답 회로에서 시작합니다. 아래 글을 고치거나 회로도의 접점을 눌러 바꾸면 바로 적용됩니다.
+              <b>띄어쓰기</b>=직렬 · <b>|</b>=병렬(괄호로 묶기) · <b>/</b>=b접점 · <b>=</b> 뒤에 코일. 예) <span class="mono">(PB1 S1 | K1) /K3 /ES = K1</span>, <span class="mono">K5 = T1</span>, <span class="mono">T1 = K6</span>, <span class="mono">PB2 = CR1</span></div>
+            <textarea id="mText" class="mono" spellcheck="false" rows="9" style="width:100%;box-sizing:border-box;font-size:13px;line-height:1.55;padding:8px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);color:var(--ink)"></textarea>
+            <div class="small" id="mErr" style="min-height:18px;margin:2px 0 4px"></div>
+            <div class="btool"><button class="btn small" id="mAddRung">＋ 줄 추가</button><button class="btn small" id="mExample">예시 회로 불러오기</button><button class="btn small ghost" id="mReset">기본 회로로 되돌리기</button></div>
+          </div>
+        </div>
         <div class="btool">
           <button class="btn primary" id="bGrade">채점하기</button>
           <button class="btn small" id="bAns">정정 예시</button>
@@ -915,6 +925,32 @@ function remapIds(base, fix){
     f.forEach(c=>{ let m=b.find(x=>!used.has(x.id)&&x.l===c.l); if(!m) m=b.find(x=>!used.has(x.id)); if(m){used.add(m.id); c.id=m.id;} }); });
   return L;
 }
+// ---------- maintenance circuit editor (text ⇄ drawing) ----------
+let mEdit=store.get("medit",true), exL=null;
+const serN=(n)=>!n?"":n.t==="c"?(n.nc?"/":"")+n.l:n.t==="s"?n.items.map(x=>x.t==="p"?serN(x):serN(x)).join(" "):"("+n.items.map(serN).join(" | ")+")";
+function cleanS(n){ if(!n) return n; const items=[]; (n.items||[]).forEach(x=>{ if(x.t==="c"){ items.push(x); return; }
+    const br=x.items.map(cleanS).filter(b=>b.items.length); if(br.length===1) br[0].items.forEach(y=>items.push(y)); else if(br.length>1) items.push({t:"p",items:br}); });
+  return {t:"s",items}; }
+function lad2txt(L){ const out=[]; L.rungs.forEach(r=>r.out.forEach(o=>{ const e=[serN(cleanS(r.s)),serN(cleanS(o.e))].filter(Boolean).join(" "); out.push(`${e} = ${o.coil}`); })); return out.join("\n"); }
+function txtLines(t){ return t.split(/\n/).map(x=>x.replace(/#.*/,"").trim()).filter(Boolean); }
+const KNOWN=/^(K[1-9]|T1|C1|CR1|PB[1-3]|ES|SW\d\d|S\d|LS\d|PS\d?)$/, COILS=/^(K[1-9]|Y\d|T1|C1|CR1|H[1-4]|BZ)$/;
+function checkTxt(t){ const lines=txtLines(t); if(!lines.length) return "회로가 비어 있습니다.";
+  for(let i=0;i<lines.length;i++){ const ln=lines[i], m=ln.split("="); if(m.length!==2) return `${i+1}번째 줄: "조건 = 코일" 형태로 써 주세요.`;
+    const coil=m[1].trim(); if(!COILS.test(coil)) return `${i+1}번째 줄: 코일 "${coil}"을(를) 알 수 없습니다 (K1~K9, Y1~, T1, C1, CR1, H1~H4, BZ).`;
+    let d=0; for(const ch of m[0]){ if(ch==="(") d++; if(ch===")") d--; if(d<0) return `${i+1}번째 줄: 괄호 ")"가 먼저 나왔습니다.`; } if(d) return `${i+1}번째 줄: 괄호 짝이 맞지 않습니다.`;
+    const toks=m[0].replace(/[()|]/g," ").split(/\s+/).filter(Boolean).map(x=>x.replace(/^\//,"")); const bad=toks.find(x=>!KNOWN.test(x)); if(bad) return `${i+1}번째 줄: 접점 "${bad}"을(를) 알 수 없습니다.`; }
+  return ""; }
+function applyTxt(t){ const err=checkTxt(t); $("mErr").textContent=err; $("mErr").style.color=err?"var(--bad)":"var(--ok)"; if(err) return;
+  let L; try{ L=S.buildLadder(txtLines(t)); }catch(e){ $("mErr").textContent="해석할 수 없습니다: "+e.message; return; }
+  curL=L; store.set("mlad:"+probKey(),t); machine=new S.Machine(simProb,curL); trace=[]; ladVer++; $("result").innerHTML=""; $("mErr").textContent="적용됨 — PB1·PB2·PB3·비상정지로 시험하거나 [유지보수 자동 점검]을 누르세요."; }
+function renderMaintEd(){ const on=mode==="maint"; $("mEd").hidden=!on; if(!on) return;
+  document.querySelectorAll("#mSeg button").forEach(b=>b.setAttribute("aria-pressed",(b.dataset.e==="1")===mEdit)); $("mEdBody").hidden=!mEdit;
+  if(mEdit){ $("mText").value=store.get("mlad:"+probKey(),null)||lad2txt(curL); $("mErr").textContent=""; } }
+$("mSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; mEdit=b.dataset.e==="1"; store.set("medit",mEdit); load(); });
+let mT=null; $("mText").addEventListener("input",()=>{ clearTimeout(mT); mT=setTimeout(()=>applyTxt($("mText").value),500); });
+$("mReset").onclick=()=>{ store.set("mlad:"+probKey(),null); curL=clone(fixL); $("mText").value=lad2txt(curL); applyTxt($("mText").value); };
+$("mExample").onclick=()=>{ $("mText").value=lad2txt(exL); applyTxt($("mText").value); };
+$("mAddRung").onclick=()=>{ const ta=$("mText"); ta.value=ta.value.replace(/\s*$/,"")+"\nPB2 = K6"; applyTxt(ta.value); ta.focus(); };
 function load(){
   prob=(kind==="P"?P.PN:P.HY)[no-1];
   baseL=S.buildLadder(prob.rungs); fixL=remapIds(baseL,S.buildLadder(prob.fix));
@@ -923,7 +959,8 @@ function load(){
   showAns=false;
   let opts={};
   if(mode==="base"){ simProb=prob; const sv=rnd?rnd.cur:ladAll[probKey()]; curL=sv?clone(sv):clone(baseL); }
-  else if(mode==="maint"){ simProb=MA.maintProblem(prob); curL=S.buildLadder(simProb.rungs); }
+  else if(mode==="maint"){ simProb=MA.maintProblem(prob); exL=S.buildLadder(simProb.rungs);
+    if(mEdit){ const t=store.get("mlad:"+probKey(),null); let L=null; if(t){ try{ L=S.buildLadder(txtLines(t)); }catch(_){ L=null; } } curL=L||clone(fixL); } else curL=clone(exL); }
   else { const bt=store.get("btarget","base"); if(bt==="maint"){ simProb=MA.maintProblem(prob); curL=S.buildLadder(simProb.rungs); } else { simProb=prob; curL=mock?clone(baseL):clone(fixL); } }
   if(mode==="build"&&window.BUILD) opts=window.BUILD.machineOpts(simProb);
   machine=new S.Machine(simProb,curL,opts);
@@ -932,10 +969,12 @@ function load(){
   $("buildArea").hidden=mode!=="build";
   $("mainGrid").hidden=mode==="build"; (mode==="build"?$("ctrlSlot"):$("ctrlHome")).appendChild($("ctrl"));
   renderStatic();
+  renderMaintEd();
   renderAll();
   if(mode==="build" && window.BUILD) window.BUILD.load();
 }
-function saveLad(){ if(rnd){ rnd.cur=curL; } else { ladAll[probKey()]=curL; store.set("lad2",ladAll); } ladVer++; machine.L=curL; updateEditCount(); }
+function saveLad(){ if(mode==="maint"){ if(mEdit){ const t=lad2txt(curL); store.set("mlad:"+probKey(),t); if(document.activeElement!==$("mText")) $("mText").value=t; $("mErr").textContent=""; } ladVer++; machine.L=curL; return; }
+  if(rnd){ rnd.cur=curL; } else { ladAll[probKey()]=curL; store.set("lad2",ladAll); } ladVer++; machine.L=curL; updateEditCount(); }
 
 // ---------- header controls ----------
 function renderChips(){
@@ -982,9 +1021,9 @@ function renderStatic(){
   $("wC1").hidden=!has("counter"); $("wT1").hidden=!has("timer");
   $("bES").setAttribute("aria-pressed","false");
   const base=mode==="base";
-  ["editCount","bUndo","bAns","bLines","bGrade","bRnd"].forEach(id=>$(id).hidden=!(base||(id==="bGrade"&&mode==="maint")));
+  ["editCount","bUndo","bAns","bLines","bGrade","bRnd"].forEach(id=>$(id).hidden=!(base||(id==="bGrade"&&mode==="maint")||(id==="bLines"&&mode==="maint"&&mEdit)));
   $("bRnd").textContent=rnd?"원래 문제로":"랜덤 오류 문제"; $("bRnd").setAttribute("aria-pressed",!!rnd);
-  $("ladTitle").textContent=base?"전기회로도 (문제지 원본에서 수정)":mode==="maint"?"유지보수 회로 예시":(store.get("btarget","base")==="maint"?"유지보수 회로 예시 (배선 참고용)":"기본동작 정답 회로 (배선 참고용)");
+  $("ladTitle").textContent=base?"전기회로도 (문제지 원본에서 수정)":mode==="maint"?(mEdit?"유지보수 회로 (내가 고친 회로)":"유지보수 회로 예시"):(store.get("btarget","base")==="maint"?"유지보수 회로 예시 (배선 참고용)":"기본동작 정답 회로 (배선 참고용)");
   $("ladHint").textContent=base?(rnd?`랜덤 오류 문제 · 오류 ${rnd.n}개 숨어 있음`:`${prob.kind==="P"?"공기압":"유압"} ${prob.no}번 · 릴레이 개수는 그대로`):mode==="maint"?"PB2·PB3·비상정지로 직접 확인해 보세요":"배관이 맞으면 PB1으로 순서대로 동작합니다";
   $("bGrade").textContent=base?"채점하기 (PB1 2회)":"유지보수 자동 점검";
   $("ansBox").hidden=true; $("bAns").textContent="정정 예시 보기";
@@ -1124,7 +1163,7 @@ function rungDiff(i){ // compare current rung i to fix rung i
 function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   const L=curL, m=machine, val=(l)=>m.val(l), out=[];
   const baseMap=S.contactMap(baseL);
-  const base=mode==="base";
+  const base=mode==="base", edt=base||(mode==="maint"&&mEdit);
   const wire=(x1,y1,x2,y2,on)=>out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${on?"var(--live)":"var(--ink)"}" stroke-width="${on?2.6:1.4}"/>`);
   const lay=L.rungs.map(r=>{ const ps=size(r.s); const os=r.out.map(o=>size(o.e)); return {ps,os,w:Math.max(ps.w,os.reduce((a,b)=>a+Math.max(b.w,1),0)),h:ps.h+Math.max(...os.map(o=>o.h))}; });
   const H=Math.max(...lay.map(l=>l.h)), yCoil=TOP+H*RH+18, yBot=yCoil+52;
@@ -1154,7 +1193,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     else if(ann&&ann[n.id]) out.push(`<text x="${x-8}" y="${y+44}" font-size="10" text-anchor="end" fill="var(--fix)" font-weight="700" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${ann[n.id]}</text>`);
     if(edited) out.push(`<circle cx="${x+15}" cy="${y+38}" r="4" fill="var(--edit)"/>`);
     if(wrong) out.push(`<rect x="${x-CW/2+3}" y="${y+2}" width="${CW-6}" height="${RH-4}" rx="6" fill="none" stroke="var(--fix)" stroke-width="2" stroke-dasharray="4 3"/>`);
-    if(base) out.push(`<rect class="hit" data-path="${path}" x="${x-CW/2+2}" y="${y+1}" width="${CW-4}" height="${RH-2}" rx="6"><title>${n.nc?"b":"a"}접점 ${n.l}</title></rect>`);
+    if(edt) out.push(`<rect class="hit" data-path="${path}" x="${x-CW/2+2}" y="${y+1}" width="${CW-4}" height="${RH-2}" rx="6"><title>${n.nc?"b":"a"}접점 ${n.l}</title></rect>`);
     return on;
   }
   function draw(n,x,y,pin,path){
@@ -1166,10 +1205,10 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     const xl=bottoms[bottoms.length-1];
     wire(x,y,xl,y,pin); wire(x,y+sz.h*RH,xl,y+sz.h*RH,any);
     out.push(`<circle cx="${x}" cy="${y}" r="3.5" fill="var(--ink)"/><circle cx="${x}" cy="${y+sz.h*RH}" r="3.5" fill="var(--ink)"/>`);
-    if(base&&editLines){ const hb=(cx,cy,op,sym,tt)=>out.push(`<g class="jbtn" data-j="${path}" data-op="${op}" style="cursor:pointer"><rect x="${cx-9}" y="${cy-9}" width="18" height="18" rx="4" fill="var(--edit)"/><text x="${cx}" y="${cy+4}" font-size="11" text-anchor="middle" fill="#fff">${sym}</text><title>${tt}</title></g>`);
+    if(edt&&editLines){ const hb=(cx,cy,op,sym,tt)=>out.push(`<g class="jbtn" data-j="${path}" data-op="${op}" style="cursor:pointer"><rect x="${cx-9}" y="${cy-9}" width="18" height="18" rx="4" fill="var(--edit)"/><text x="${cx}" y="${cy+4}" font-size="11" text-anchor="middle" fill="#fff">${sym}</text><title>${tt}</title></g>`);
       hb(x-44,y,"topUp","▲","분기점을 접점 하나 위로"); hb(x-24,y,"topDown","▼","분기점을 접점 하나 아래로");
       hb(x-44,y+sz.h*RH,"botUp","▲","합류점을 접점 하나 위로"); hb(x-24,y+sz.h*RH,"botDown","▼","합류점을 접점 하나 아래로"); }
-    if(base){ out.push(`<circle class="hit" data-j="${path}" data-end="top" cx="${x}" cy="${y}" r="10"><title>분기점 위치 옮기기</title></circle><circle class="hit" data-j="${path}" data-end="bot" cx="${x}" cy="${y+sz.h*RH}" r="10"><title>합류점 위치 옮기기</title></circle>`); }
+    if(edt){ out.push(`<circle class="hit" data-j="${path}" data-end="top" cx="${x}" cy="${y}" r="10"><title>분기점 위치 옮기기</title></circle><circle class="hit" data-j="${path}" data-end="bot" cx="${x}" cy="${y+sz.h*RH}" r="10"><title>합류점 위치 옮기기</title></circle>`); }
     return any;
   }
   function coilSym(name,x,on,flag){
@@ -1223,6 +1262,7 @@ function resolve(path){ // "ri|s|,i0,i1" -> {S,i,node}
   return {S:parent,i:li,node};
 }
 function labelOptions(){
+  if(mode==="maint"){ const sn=Object.keys(simProb.sensors); return {K:["K1","K2","K3","K4","K5","K6","K7","K8","K9","T1","C1"],S:sn,PB:["PB1","PB2","PB3","ES"]}; }
   const ks=new Set(), ss=new Set(Object.keys(prob.sensors));
   baseL.rungs.forEach(r=>r.out.forEach(o=>{ if(o.coil[0]==="K") ks.add(o.coil); }));
   baseL.contacts.forEach(c=>{ if(c.l[0]==="K") ks.add(c.l); });
@@ -1243,8 +1283,10 @@ function openPop(path,ev){
    <div class="lab">접점 형식</div><div class="row"><button class="opt" data-nc="0" aria-pressed="${!c.nc}">a접점 (NO)</button><button class="opt" data-nc="1" aria-pressed="${c.nc}">b접점 (NC)</button></div>
    <div class="lab">신호</div><div class="row">${grp(o.K)}</div><div class="row">${grp(o.S)}${grp(o.PB)}</div>
    <div class="lab">위치 (같은 줄 안에서)</div><div class="row"><button class="opt" data-mv="-1" ${i<=0?"disabled":""}>▲ 위로</button><button class="opt" data-mv="1" ${i>=Sr.items.length-1?"disabled":""}>▼ 아래로</button></div>
+   ${mode==="maint"?`<div class="lab">구조 바꾸기</div><div class="row"><button class="opt" data-add="s">＋ 아래에 직렬 접점</button><button class="opt" data-add="p">＋ 옆에 병렬 접점</button><button class="opt" data-del="1" style="color:var(--bad)">✕ 이 접점 삭제</button></div>`:""}
    <div class="lab" id="popMsg"></div>
-   <div class="row" style="justify-content:space-between"><button class="btn small" data-reset="1">신호·형식 원본으로</button><button class="btn small primary" data-close="1">닫기</button></div>`;
+   <div class="row" style="justify-content:space-between">${mode==="maint"?"<span></span>":`<button class="btn small" data-reset="1">신호·형식 원본으로</button>`}<button class="btn small primary" data-close="1">닫기</button></div>`;
+  if(mode==="maint") pop.querySelector(".lab").textContent=`${c.nc?"b":"a"}접점 ${c.l}`;
   pop.hidden=false; place(pop,ev);
   pop.onclick=(e)=>{
     const b=e.target.closest("button"); if(!b||b.disabled) return;
@@ -1253,6 +1295,11 @@ function openPop(path,ev){
     if(b.dataset.reset){ n.l=orig.l; n.nc=orig.nc; }
     if(b.dataset.nc!==undefined) n.nc=b.dataset.nc==="1";
     if(b.dataset.l) n.l=b.dataset.l;
+    if(b.dataset.add||b.dataset.del){ const nid=Math.max(0,...S.contactMap(curL)&&Object.keys(S.contactMap(curL)).map(Number))+1, nc={t:"c",l:n.l[0]==="K"?n.l:"K1",nc:false,id:nid};
+      if(b.dataset.add==="s") r.S.items.splice(r.i+1,0,nc);
+      else if(b.dataset.add==="p") r.S.items[r.i]={t:"p",items:[{t:"s",items:[n]},{t:"s",items:[nc]}]};
+      else { r.S.items.splice(r.i,1); }
+      curL=S.buildLadder(txtLines(lad2txt(curL))); saveLad(); machine=new S.Machine(simProb,curL); pop.hidden=true; return; }
     if(b.dataset.mv){ const d=+b.dataset.mv, j=r.i+d; const t=r.S.items[j]; r.S.items[j]=r.S.items[r.i]; r.S.items[r.i]=t;
       const parts=path.split("|"); const idx=parts[2].split(",").filter(x=>x!==""); idx[idx.length-1]=String(j); path=parts[0]+"|"+parts[1]+"|,"+idx.join(","); }
     saveLad(); openPop(path,ev);
