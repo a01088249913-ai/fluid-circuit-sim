@@ -172,6 +172,7 @@ details.sheetbox summary::before{content:"▸";color:var(--muted)}
 details.sheetbox[open] summary::before{content:"▾"}
 details.sheetbox[open] summary{margin-bottom:10px}
 .mode-build .grid{grid-template-columns:minmax(0,1fr)}
+.pbtip{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:560px;background:#1f2933;color:#fff;padding:12px 16px;border-radius:10px;font-size:14px;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:50}
 #ctrlSlot .ctrl{margin:0 0 10px;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel)}
 .mode-build #ladCol{display:none}
 .mode-build #leftCol{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
@@ -1340,9 +1341,15 @@ function startRandom(){
 $("bRnd").onclick=()=>{ if(rnd){ rnd=null; load(); } else startRandom(); };
 
 // ---------- buttons ----------
+// a real finger press lasts at least ~0.2 s; a very short click is stretched to that
+let tipShown=false;
+function pressTip(ms){ if(tipShown||ms>600) return; tipShown=true; let t=$("pbTip"); if(!t){ t=document.createElement("div"); t.id="pbTip"; t.className="pbtip"; document.body.appendChild(t); }
+  t.innerHTML="푸시버튼은 <b>누르고 있는 동안만</b> 접점이 붙습니다. 자기유지 회로 없이 솔레노이드에 바로 연결했다면, 손을 떼는 순간 편솔 밸브가 스프링으로 돌아가 실린더도 복귀합니다. (길게 눌러 보세요)"; t.hidden=false; clearTimeout(t._h); t._h=setTimeout(()=>t.hidden=true,6000); }
+window.APP_press=(key)=>{ const t0=performance.now(); machine.inp[key]=1; return ()=>{ const ms=performance.now()-t0; const rel=()=>{ machine.inp[key]=0; }; if(ms<200) setTimeout(rel,200-ms); else rel(); if(mode==="build") pressTip(ms); }; };
 function hold(btn,key){
-  const dn=(e)=>{ e.preventDefault(); machine.inp[key]=1; btn.classList.add("down"); try{btn.setPointerCapture(e.pointerId)}catch(_){} };
-  const up=()=>{ machine.inp[key]=0; btn.classList.remove("down"); };
+  let rel=null;
+  const dn=(e)=>{ e.preventDefault(); if(rel) return; rel=window.APP_press(key); btn.classList.add("down"); try{btn.setPointerCapture(e.pointerId)}catch(_){} };
+  const up=()=>{ if(rel){ rel(); rel=null; } btn.classList.remove("down"); };
   btn.addEventListener("pointerdown",dn); btn.addEventListener("pointerup",up); btn.addEventListener("pointercancel",up); btn.addEventListener("lostpointercapture",up);
   btn.addEventListener("keydown",e=>{ if(e.key===" "||e.key==="Enter"){ machine.inp[key]=1; btn.classList.add("down"); } });
   btn.addEventListener("keyup",up);
@@ -2203,7 +2210,7 @@ function drawRef(){ if($("refBox").open===false) return;
 
 $("wboard").addEventListener("pointerdown",e=>{
   const b=e.target.closest(".wbtn"); const m=APP.machine;
-  if(b){ const k=b.dataset.inp; if(b.dataset.lock==="1"){ m.inp[k]=m.inp[k]?0:1; } else { m.inp[k]=1; const up=()=>{ m.inp[k]=0; window.removeEventListener("pointerup",up); }; window.addEventListener("pointerup",up); } return; }
+  if(b){ const k=b.dataset.inp; if(b.dataset.lock==="1"){ m.inp[k]=m.inp[k]?0:1; } else { const rel=window.APP_press(k); const up=()=>{ rel(); window.removeEventListener("pointerup",up); }; window.addEventListener("pointerup",up); } return; }
   const j=e.target.closest(".jack");
   if(j){ const id=j.dataset.j; if(!wpend) wpend=id; else if(wpend===id) wpend=null; else { wires.push({a:wpend,b:id,c:wcol}); wpend=null; saveWire(); } wSig=""; return; }
   const w=e.target.closest(".hosehit");
