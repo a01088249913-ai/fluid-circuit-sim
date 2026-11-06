@@ -885,10 +885,31 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     if (m.act) q.act = q.act.map((a) => (m.act[a.id] ? Object.assign({}, a, { valve: m.act[a.id] }) : a));
     if (m.ps) q.ps = m.ps;
     if (m.drop) { q.sensors = Object.assign({}, q.sensors); m.drop.forEach((d) => delete q.sensors[d]); }
-    q.rungs = m.rungs;
+    q.rungs = esRelay(m.rungs);
     return q;
   }
-  const api = { M, maintProblem };
+  // E-stop through a relay: "/ES = Kes" energises Kes while the switch is released;
+  // every rung that was cut by /ES hangs under one common Kes contact, ES (pressed) becomes /Kes
+  function esRelay(rungs) {
+    const txt = JSON.stringify(rungs);
+    if (!/(^|[^A-Z])ES\b/.test(txt)) return rungs;
+    const used = new Set((txt.match(/K\d/g) || []));
+    let kes = null; for (let k = 9; k >= 1; k--) if (!used.has("K" + k)) { kes = "K" + k; break; }
+    if (!kes) return rungs;
+    const sub = (e) => e.replace(/\/ES\b/g, kes).replace(/(^|[^\/A-Z])ES\b/g, "$1/" + kes);
+    const out = ["/ES = " + kes], group = [kes]; let gi = -1;
+    rungs.forEach((r) => {
+      if (typeof r === "string" && /\/ES\b/.test(r)) {
+        const [e, c] = r.split("=").map((x) => x.trim());
+        if (gi < 0) { gi = out.length; out.push(null); }
+        group.push([sub(e.replace(/\s*\/ES\b/, "").trim()), c]);
+      } else if (typeof r === "string") out.push(sub(r));
+      else out.push([sub(r[0]), ...r.slice(1).map(([e, c]) => [sub(e), c])]);
+    });
+    if (gi >= 0) out[gi] = group;
+    return out;
+  }
+  const api = { M, maintProblem, esRelay };
   if (typeof module !== "undefined") module.exports = api; else root.MAINT = api;
 })(this);
 
@@ -2356,7 +2377,7 @@ function jumpPrep(L0){
     const c2={}; all.forEach(c=>{ if(/^K/.test(c.l)) c2[c.l]=(c2[c.l]||0)+1; });
     const o=Object.keys(c2).find(l=>c2[l]>4); if(!o) break;
     const k=nextK(); let i=0; all.filter(c=>c.l===o).forEach(c=>{ if(++i>4){ c.orig=c.orig||c.l; c.l=k; } });
-    L.rungs.forEach(r=>{ if(r.out.some(x=>x.coil===o)) r.out.push({e:{t:"s",items:[]},coil:k}); });
+    L.rungs.forEach(r=>{ const x=r.out.find(x=>x.coil===o); if(x) r.out.push({e:JSON.parse(JSON.stringify(x.e||{t:"s",items:[]})),coil:k,with:o}); });   // jump coil in parallel with the original coil
     notes.push(`${o} 접점이 4조를 넘어 코일을 병렬로 묶은 점프 릴레이 ${k}를 추가했습니다.`);
   }
   if(free<=0) notes.push("릴레이 9개(유닛 3대)를 넘습니다.");
@@ -2402,7 +2423,8 @@ function compile(L0){
   function series(n,inN){ let cur=inN; n.items.forEach(x=>{ cur=x.t==="c"?contact(x,cur):para(x,cur); }); return cur; }
   function para(n,inN){ const out=newNode(); n.items.forEach(b=>{ const o=series(b,inN); merge(o,out); }); return out; }
   let ESB=null; if(L.rungs.some(r=>r.bus)){ ESB=newNode(); att(PLUSN,"ES.2.C"); att(ESB,"ES.2.NC"); }
-  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); r.out.forEach(o=>{ const y=series(o.e,x); att(y,R(o.coil)+".A1"); att(MINUSN,R(o.coil)+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
+  const yOf={};
+  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); r.out.forEach(o=>{ const y=o.with&&yOf[o.with]!=null?yOf[o.with]:series(o.e,x); yOf[o.coil]=y; att(y,R(o.coil)+".A1"); att(MINUSN,R(o.coil)+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
   const groups={}; nodes.forEach((js,i)=>{ const g=nf(i); (groups[g]=groups[g]||[]).push(...js); });
   const ws=[];
   const busOf=(u,pol)=>{ const ids=Object.keys(JACK).filter(i=>i.startsWith(u+"."+pol)); return ids; };
