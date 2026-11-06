@@ -348,6 +348,9 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
           <span><i style="background:var(--live)"></i>전기 흐름</span>
           <span><i style="background:var(--edit)"></i>내가 바꾼 곳</span>
           <span><i style="background:var(--fix)"></i>정정 예시와 다른 곳</span>
+          <span><b style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#16a34a;vertical-align:middle;margin-right:4px"></b>접점 닫힘</span>
+          <span><b style="display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid #9aa3ad;vertical-align:middle;margin-right:4px"></b>접점 열림</span>
+          <span><b style="color:#e8742b;margin-right:3px">동작</b>코일·버튼·센서가 작동한 접점</span>
         </div>
         <div id="ansBox" hidden></div>
         <div class="res" id="result"></div>
@@ -1237,8 +1240,13 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
       out.push(`<polyline points="${x-12},${y+30} ${x-34},${y+30} ${x-34},${y+38}" fill="none" stroke="#2453c4" stroke-width="2.2"/><line x1="${x-42}" y1="${y+38}" x2="${x-26}" y2="${y+38}" stroke="#2453c4" stroke-width="2.6"/>`);
       const t=(tx,ty,txt,col,anc)=>out.push(`<text x="${tx}" y="${ty}" font-size="9.5" font-weight="700" text-anchor="${anc||"start"}" fill="${col}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${txt}</text>`);
       t(x+4,y+9,"BN 갈","#8a4b20"); t(x-34,y+49,"BU 청→0V","#2453c4","middle"); t(x-5,y+61,"BK 흑","#1d2024","end"); if(n.nc) t(x+16,y+44,"b(NC형)","var(--bad)"); }
-    else if(n.nc){ out.push(`<line x1="${x}" y1="${y+38}" x2="${x+9}" y2="${y+14}" stroke="${c}" stroke-width="2"/><line x1="${x}" y1="${y+16}" x2="${x+11}" y2="${y+16}" stroke="${c}" stroke-width="2"/>`); }
-    else out.push(`<line x1="${x}" y1="${y+38}" x2="${x-11}" y2="${y+15}" stroke="${c}" stroke-width="2"/>`);
+    else { // blade drawn in its present state: closed = touching, open = swung away
+      const cc=cl?(pin?"var(--live)":"var(--ink)"):"#9aa3ad", sw=cl?2.6:2;
+      if(n.nc){ out.push(`<line x1="${x}" y1="${y+16}" x2="${x+11}" y2="${y+16}" stroke="var(--ink)" stroke-width="2"/>`);
+        out.push(cl?`<line x1="${x}" y1="${y+38}" x2="${x+9}" y2="${y+14}" stroke="${cc}" stroke-width="${sw}"/>`:`<line x1="${x}" y1="${y+38}" x2="${x-12}" y2="${y+18}" stroke="${cc}" stroke-width="${sw}" stroke-dasharray="${v?"":""}"/>`); }
+      else out.push(cl?`<line x1="${x}" y1="${y+38}" x2="${x}" y2="${y+16}" stroke="${cc}" stroke-width="${sw}"/><line x1="${x-4}" y1="${y+16}" x2="${x+4}" y2="${y+16}" stroke="${cc}" stroke-width="2"/>`:`<line x1="${x}" y1="${y+38}" x2="${x-11}" y2="${y+15}" stroke="${cc}" stroke-width="${sw}"/>`);
+      out.push(`<circle cx="${x+15}" cy="${y+22}" r="3.6" fill="${cl?"#16a34a":"#fff"}" stroke="${cl?"#16a34a":"#9aa3ad"}" stroke-width="1.4"><title>${cl?"닫힘(통전 가능)":"열림"}</title></circle>`);
+      if(v) out.push(`<text x="${x+21}" y="${y+25}" font-size="8.5" font-weight="700" fill="#e8742b">동작</text>`); }
     const isS=/^(S|LS|PS)/.test(n.l), isPB=/^PB/.test(n.l);
     out.push(`<text x="${x-14}" y="${s3?y+22:y+30}" font-size="11.5" text-anchor="end" fill="${isS?"var(--minus)":"var(--ink)"}" font-weight="${isS||isPB?600:500}">${n.l}${isPB?" E":""}</text>`);
     const prox=/^S\d/.test(n.l);
