@@ -1353,6 +1353,8 @@ function findNew(L){ let found=null; const walk=(n,path)=>{ if(found||!n) return
   L.rungs.forEach((r,i)=>{ walk(r.s,`${i}|s|`); r.out.forEach((o,j)=>walk(o.e,`${i}|o${j}|`)); }); return found; }
 function mCommit(){ curL=S.buildLadder(txtLines(lad2txt(curL))); const np=findNew(curL); saveLad(); machine=new S.Machine(simProb,curL); trace=[]; $("result").innerHTML=""; return np; }
 function freeK(){ const used=new Set(); curL.rungs.forEach(r=>r.out.forEach(o=>used.add(o.coil))); for(let k=1;k<=9;k++) if(!used.has("K"+k)) return "K"+k; return "K9"; }
+function pathOfId(L,id){ let found=null; const walk=(n,path)=>{ if(found||!n) return; if(n.t==="c"){ if(n.id===id) found=path; return; } n.items.forEach((x,k)=>walk(x,path+","+k)); };
+  L.rungs.forEach((r,i)=>{ walk(r.s,`${i}|s|`); r.out.forEach((o,j)=>walk(o.e,`${i}|o${j}|`)); }); return found; }
 function maintClick(e){
   const ins=e.target.closest(".ins");
   if(ins){ const [sp,k]=ins.dataset.ins.split("#"); const n=resolve(sp).node; n.items.splice(+k,0,newC()); const np=mCommit(); if(np) openPop(np,e); flash("새 접점을 넣었습니다. 신호와 a/b를 고르세요."); return true; }
@@ -1385,16 +1387,17 @@ document.addEventListener("click",e=>{ const b=e.target.closest("#mTools button"
   document.body.dataset.mtool=mTool; ladVer++; });
 function openPop(path,ev){
   popAnchor={path,ev};
-  const {node:c,S:Sr,i}=resolve(path), orig=S.contactMap(baseL)[c.id]||{l:c.l,nc:c.nc}, o=labelOptions(), pop=$("pop");
+  const {node:c,S:Sr,i}=resolve(path), inBase=!!S.contactMap(baseL)[c.id], orig=S.contactMap(baseL)[c.id]||{l:c.l,nc:c.nc}, o=labelOptions(), pop=$("pop");
   const grp=(arr)=>arr.map(l=>`<button class="opt" data-l="${l}" aria-pressed="${c.l===l}">${l}</button>`).join("");
   pop.innerHTML=`<div class="lab">문제지 원본: <b class="mono">${orig.nc?"b":"a"}접점 ${orig.l}</b></div>
    <div class="lab">접점 형식</div><div class="row"><button class="opt" data-nc="0" aria-pressed="${!c.nc}">a접점 (NO)</button><button class="opt" data-nc="1" aria-pressed="${c.nc}">b접점 (NC)</button></div>
    <div class="lab">신호</div><div class="row">${grp(o.K)}</div><div class="row">${grp(o.S)}${grp(o.PB)}</div>
    <div class="lab">위치 (같은 줄 안에서)</div><div class="row"><button class="opt" data-mv="-1" ${i<=0?"disabled":""}>▲ 위로</button><button class="opt" data-mv="1" ${i>=Sr.items.length-1?"disabled":""}>▼ 아래로</button></div>
-   ${mode==="maint"?`<div class="lab">구조 바꾸기</div><div class="row"><button class="opt" data-add="s">＋ 아래에 직렬 접점</button><button class="opt" data-add="p">＋ 옆에 병렬 접점</button><button class="opt" data-del="1" style="color:var(--bad)">✕ 이 접점 삭제</button></div>`:""}
+   ${mode==="maint"||mode==="base"?`<div class="lab">구조 바꾸기</div><div class="row"><button class="opt" data-add="s">＋ 아래에 직렬 접점</button><button class="opt" data-add="p">＋ 옆에 병렬 접점</button><button class="opt" data-del="1" style="color:var(--bad)">✕ 이 접점 삭제</button></div>`:""}
    <div class="lab" id="popMsg"></div>
    <div class="row" style="justify-content:space-between">${mode==="maint"?"<span></span>":`<button class="btn small" data-reset="1">신호·형식 원본으로</button>`}<button class="btn small primary" data-close="1">닫기</button></div>`;
   if(mode==="maint") pop.querySelector(".lab").textContent=`${c.nc?"b":"a"}접점 ${c.l}`;
+  else if(!inBase) pop.querySelector(".lab").innerHTML=`<b style="color:var(--edit)">새로 넣은 접점</b> — 신호와 a/b를 고르세요`;
   pop.hidden=false; place(pop,ev);
   pop.onclick=(e)=>{
     const b=e.target.closest("button"); if(!b||b.disabled) return;
@@ -1407,6 +1410,10 @@ function openPop(path,ev){
       if(b.dataset.add==="s") r.S.items.splice(r.i+1,0,nc);
       else if(b.dataset.add==="p") r.S.items[r.i]={t:"p",items:[{t:"s",items:[n]},{t:"s",items:[nc]}]};
       else { r.S.items.splice(r.i,1); }
+      if(mode==="base"){ // keep contact ids so the "changed" marks stay right
+        curL.rungs.forEach(rr=>{ rr.s=cleanS(rr.s); rr.out.forEach(o=>o.e=cleanS(o.e)); });
+        saveLad(); machine=new S.Machine(simProb,curL); trace=[]; ladVer++; pop.hidden=true;
+        if(b.dataset.add){ const np=pathOfId(curL,nid); if(np) openPop(np,ev); flash("접점을 넣었습니다. 신호와 a/b를 고르세요."); } else flash("접점을 삭제했습니다."); return; }
       curL=S.buildLadder(txtLines(lad2txt(curL))); saveLad(); machine=new S.Machine(simProb,curL); pop.hidden=true; return; }
     if(b.dataset.mv){ const d=+b.dataset.mv, j=r.i+d; const t=r.S.items[j]; r.S.items[j]=r.S.items[r.i]; r.S.items[r.i]=t;
       const parts=path.split("|"); const idx=parts[2].split(",").filter(x=>x!==""); idx[idx.length-1]=String(j); path=parts[0]+"|"+parts[1]+"|,"+idx.join(","); }
@@ -1447,7 +1454,8 @@ function countChanges(){
   curL.rungs.forEach((r,i)=>{ const b=baseL.rungs[i]; if(S.skel(r.s)+r.out.map(o=>S.skel(o.e)).join()!==S.skel(b.s)+b.out.map(o=>S.skel(o.e)).join()) s++; });
   return {c,s};
 }
-function updateEditCount(){ const {c,s}=countChanges(); const n=c+s; $("editCount").textContent=`접점 변경 ${c}개 · 선 위치 변경 ${s}곳`; $("editCount").style.borderColor=n?"var(--edit)":""; $("editCount").style.color=n?"var(--edit)":""; }
+function addDelCount(){ const bm=S.contactMap(baseL), cm=S.contactMap(curL); let add=0, del=0; Object.keys(cm).forEach(k=>{ if(!bm[k]) add++; }); Object.keys(bm).forEach(k=>{ if(!cm[k]) del++; }); return {add,del}; }
+function updateEditCount(){ const {c,s}=countChanges(), {add,del}=addDelCount(); const n=c+s+add+del; $("editCount").textContent=`접점 변경 ${c}개 · 선 위치 변경 ${s}곳`+(add?` · 추가 ${add}`:"")+(del?` · 삭제 ${del}`:""); $("editCount").style.borderColor=n?"var(--edit)":""; $("editCount").style.color=n?"var(--edit)":""; }
 $("bLines").onclick=()=>{ editLines=!editLines; $("bLines").setAttribute("aria-pressed",editLines); $("bLines").textContent=editLines?"선 위치 편집 끄기":"선 위치 편집"; $("lineMsg").textContent=editLines?"주황 ▲▼를 누르면 가지의 분기점·합류점이 접점 하나씩 위·아래로 옮겨집니다.":""; ladVer++; };
 $("bUndo").onclick=()=>{ curL=clone(baseL); saveLad(); machine=new S.Machine(simProb,curL); trace=[]; $("result").innerHTML=""; };
 
