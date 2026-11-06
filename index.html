@@ -1591,9 +1591,13 @@ let lastSens={}; let lastSpeed={}; let vmap={}; let comps=[], hoses=[], view=sto
 function hoseKey(){ return "hose:"+APP.probKey()+":"+store.get("btarget","base")+(APP.mock?":mock":""); }
 function saveHose(){ store.set(hoseKey(),{comps,hoses}); fluidCache=null; }
 const SETDEF=()=>({su:0.5,relief:4.0,prv:isH()?2.0:0.3,cbv:3.0,ps:3.0});
+function baseSupply(){ // supply equipment is always on the board from the start
+  const H=isH(), mk=(t,x,y)=>{ const c={id:nextId++,t,x,y}; if(T[t].adj) c.set=SETDEF()[t]; comps.push(c); };
+  if(H){ if(!comps.some(c=>c.t==="pu")) mk("pu",20,500); if(!comps.some(c=>c.t==="distP")) mk("distP",440,560); if(!comps.some(c=>c.t==="distT")) mk("distT",720,560); }
+  else { if(!comps.some(c=>c.t==="su")) mk("su",20,490); if(!comps.some(c=>c.t==="distP")) mk("distP",300,560); } }
 function loadHose(){ fluidCache=null; const d=store.get(hoseKey(),null); comps=(d&&Array.isArray(d.comps))?d.comps:[]; hoses=(d&&Array.isArray(d.hoses))?d.hoses:[];
   comps=comps.filter(c=>c&&T[c.t]); comps.forEach(c=>{ if(T[c.t].adj&&(typeof c.set!=="number"||isNaN(c.set))) c.set=SETDEF()[c.t]; if(c.t==="sensLS"&&c.dir==null) c.legacyDir=true; });
-  nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; }
+  nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; if(!comps.length) baseSupply(); }
 
 function motorPlan(a){ // returns plan for motors
   const p=APP.prob;
@@ -1907,7 +1911,8 @@ function partArt(t,w,h,sym,c){
       { let d=`M${bx+bw2/2} ${by+bh2}`; for(let i=1;i<=4;i++) d+=` L${bx+bw2/2+(i%2?-5:5)} ${by+bh2+i*3}`; if(t==="prv") o.push(`<path d="${d}" ${st}/>`); }
       if(t==="cbv") { let d=`M${bx+bw2} ${by+6}`; for(let i=1;i<=4;i++) d+=` L${bx+bw2+i*3} ${by+6+(i%2?-4:4)}`; o.push(`<path d="${d}" ${st}/>`); } }
     else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="20" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); arrowTo(30,44,46,24); L(38,54,38,78); }
-    else if(t==="distP"||t==="distT"){ L(16,24,w-16,24,2); }
+    else if(t==="distP"){ L(16,24,w-16,24,2.4); o.push(`<path d="M${w/2-7} 40 L${w/2+7} 40 L${w/2} 30Z" fill="${K}"/>`); L(w/2,24,w/2,30); o.push(`<text x="${w/2}" y="${h+12}" font-size="12" font-weight="800" text-anchor="middle" stroke="#fff" stroke-width="3.5" paint-order="stroke" fill="#d9480f">공급 P (압력원)</text>`); return o.join(""); }
+    else if(t==="distT"){ L(16,24,w-16,24,2.4); Object.values(T[t].ports).forEach(([px])=>{ L(px,24,px,32); tank(px,32); }); o.push(`<text x="${w/2}" y="${h+12}" font-size="12" font-weight="800" text-anchor="middle" stroke="#fff" stroke-width="3.5" paint-order="stroke" fill="#2453c4">탱크 리턴 T</text>`); return o.join(""); }
     else if(t==="sensS"){ o.push(`<path d="M32 6 L50 24 L32 42 L14 24 Z" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(28,15,28,33); L(36,15,36,33); L(14,46,50,46,1.2); o.push(`<path d="M32 40 l3 3 l-3 3 l-3 -3z" ${st}/>`); }
     else if(t==="sensLS"){ o.push(`<rect x="18" y="12" width="36" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(18,12,54,42); o.push(`<path d="M24 20 h8 l8 -4 M42 20 h6" ${st}/><circle cx="32" cy="20" r="1.6" fill="${K}"/>`); spring(36,12,1,1); o.push(`<path d="M30 10 l6 -4 l-6 -4 l6 -4" ${st}/>`); o.push(`<path d="M30 42 V52 a6 6 0 0 0 12 0 V42" ${st} fill="${F}"/>`); }
     else if(t==="tee"){ o.push(`<path d="M16 30 H94 M42 30 V52 M68 30 V52" stroke="${K}" stroke-width="1.6" fill="none"/><circle cx="42" cy="30" r="3" fill="${K}"/><circle cx="68" cy="30" r="3" fill="${K}"/>`); }
@@ -1934,7 +1939,10 @@ function partArt(t,w,h,sym,c){
   else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="28" fill="#f4f6f8" stroke="${MET2}" stroke-width="4"/><line x1="38" y1="34" x2="52" y2="20" stroke="#c22" stroke-width="2"/><rect x="32" y="60" width="12" height="12" fill="${MET}"/><text x="38" y="48" font-size="7" text-anchor="middle" fill="#555">MPa</text>`); }
   else if(t==="sensS"){ o.push(`<rect x="22" y="2" width="20" height="34" rx="4" fill="#2b5fb8"/><rect x="18" y="30" width="28" height="10" rx="2" fill="#d6dbe0"/><circle cx="32" cy="10" r="3" fill="#ffd400"/>`); }
   else if(t==="sensLS"){ o.push(`<rect x="8" y="14" width="60" height="26" rx="3" fill="#e8ebee" stroke="#9aa3ad"/><rect x="26" y="18" width="24" height="18" fill="#3a3f45"/><line x1="38" y1="40" x2="38" y2="52" stroke="#555" stroke-width="3"/><circle cx="38" cy="54" r="5" fill="#c9ced4" stroke="#555"/>`); }
-  else if(t==="distP"||t==="distT"){ o.push(`<rect x="2" y="6" width="${w-4}" height="${h-12}" rx="4" fill="${t==="distT"?"#d8dce0":"#efe7c8"}" stroke="${PLATE2}"/>`); }
+  else if(t==="distP"||t==="distT"){ const P_=t==="distP", col=P_?"#d9480f":"#2453c4";
+    o.push(`<rect x="2" y="6" width="${w-4}" height="${h-12}" rx="5" fill="${P_?"#ffe3d3":"#dce8fc"}" stroke="${col}" stroke-width="2.5"/><rect x="2" y="6" width="${w-4}" height="8" rx="4" fill="${col}"/>`);
+    o.push(`<text x="${w/2}" y="${h+12}" font-size="12" font-weight="800" text-anchor="middle" stroke="#fff" stroke-width="3.5" paint-order="stroke" fill="${col}">${P_?"▲ 공급 분배기 (P · 압력)":"▼ 탱크 리턴 분배기 (T · 복귀)"}</text>`);
+    o.push(`<g transform="translate(0,${h+20})"></g>`); return o.join(""); }
   else { o.push(`<rect x="2" y="2" width="${w-4}" height="${h-4}" rx="4" fill="${PLATE}" stroke="${PLATE2}"/><rect x="24" y="${h/2-10}" width="${w-48}" height="20" rx="3" fill="${t==="ps"?"#2a3b74":BODY}"/>`); }
   label(T[t].n,t==="cyl"?-2:h+10);
   return o.join("");
@@ -1982,6 +1990,8 @@ function renderBoard(){
     const col=H?"#1d1f22":"var(--plus)"; const dd=view==="sym"?`M${a[0]} ${a[1]} L${a[0]} ${(a[1]+b[1])/2} L${b[0]} ${(a[1]+b[1])/2} L${b[0]} ${b[1]}`:`M${a[0]} ${a[1]} C${a[0]} ${a[1]+60} ${b[0]} ${b[1]+60} ${b[0]} ${b[1]}`;
     o.push(`<path class="hosehit" data-h="${i}" d="${dd}"/><path class="hose" d="${dd}" fill="none" stroke="${view==="sym"?"var(--plus)":col}" stroke-width="${view==="sym"?2:3.4}" stroke-linecap="round" pointer-events="none"/>`); });
   comps.forEach(c=>{ Object.entries(T[c.t].ports).forEach(([p,q])=>{ const x=c.x+q[0], y=c.y+q[1], k=c.id+"."+p, on=pend===k, used=hoses.some(h=>h.a===k||h.b===k);
+    const ring=c.t==="distP"?"#d9480f":c.t==="distT"?"#2453c4":null;
+    if(ring&&view!=="sym") o.push(`<circle cx="${x}" cy="${y}" r="11" fill="none" stroke="${ring}" stroke-width="3" pointer-events="none"/>`);
     o.push(`<g class="port" data-k="${k}"><circle cx="${x}" cy="${y}" r="${view==="sym"?5:7.5}" fill="${view==="sym"?(used?"var(--plus)":"var(--card)"):MET}" stroke="${on?"var(--minus)":view==="sym"?"var(--ink)":"#555"}" stroke-width="${on?3:1.4}"/>${view==="sym"?"":`<circle cx="${x}" cy="${y}" r="3" fill="${used?"var(--plus)":"#3a3f45"}"/>`}<text x="${x+9}" y="${y-6}" font-size="9.5" font-weight="600" fill="var(--ink)">${p}</text></g>`); }); });
   comps.forEach(c=>{ if(T[c.t].adj) o.push(`<g transform="translate(${c.x},${c.y})">${setOverlay(c)}</g>`); }); // top layer: pressure −/+ above hoses
   $("board").innerHTML=o.join("");
@@ -2032,7 +2042,7 @@ function isBusPort(){ return false; }
 $("board").addEventListener("pointermove",e=>{ if(!drag) return; const p=svgPt(e); const nx=Math.max(0,Math.min(1000-T[drag.c.t].w,Math.round((p.x-drag.dx)/10)*10)), ny=Math.max(10,Math.min(680-T[drag.c.t].h,Math.round((p.y-drag.dy)/10)*10)); if(nx!==drag.c.x||ny!==drag.c.y){ drag.c.x=nx; drag.c.y=ny; drag.moved=true; renderBoard(); } });
 $("board").addEventListener("pointerup",()=>{ if(drag){ if(drag.moved) saveHose(); drag=null; } });
 $("viewSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; view=b.dataset.v; store.set("hview",view); document.querySelectorAll("#viewSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===view)); renderBoard(); });
-$("bClear").onclick=()=>{ comps=[]; hoses=[]; sel=null; pend=null; saveHose(); APP.resetMachine(); renderBoard(); $("checkRes").innerHTML=""; };
+$("bClear").onclick=()=>{ comps=[]; hoses=[]; sel=null; pend=null; nextId=1; baseSupply(); saveHose(); APP.resetMachine(); renderBoard(); $("checkRes").innerHTML=""; };
 $("bCheck").onclick=()=>{ const r=analyze(); $("checkRes").innerHTML=r.items.map(([ok,t,d])=>APP.item(ok,t,d)).join(""); };
 function buildModel(sp,m){
   comps=[]; hoses=[]; nextId=1; const H=isH(); sp=sp||APP.simProb; m=m||mt();
