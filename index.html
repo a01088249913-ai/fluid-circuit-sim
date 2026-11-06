@@ -1594,10 +1594,17 @@ const SETDEF=()=>({su:0.5,relief:4.0,prv:isH()?2.0:0.3,cbv:3.0,ps:3.0});
 function baseSupply(){ // supply equipment is always on the board from the start
   const H=isH(), mk=(t,x,y)=>{ const c={id:nextId++,t,x,y}; if(T[t].adj) c.set=SETDEF()[t]; comps.push(c); };
   if(H){ if(!comps.some(c=>c.t==="pu")) mk("pu",20,500); if(!comps.some(c=>c.t==="distP")) mk("distP",440,560); if(!comps.some(c=>c.t==="distT")) mk("distT",720,560); }
-  else { if(!comps.some(c=>c.t==="su")) mk("su",20,490); if(!comps.some(c=>c.t==="distP")) mk("distP",300,560); } }
+  else { if(!comps.some(c=>c.t==="su")) mk("su",20,490); if(!comps.some(c=>c.t==="distP")) mk("distP",300,560); }
+  linkSupply(); }
+function linkSupply(){ // power unit / service unit come pre-piped to their distributors
+  const used=(k)=>hoses.some(h=>h.a===k||h.b===k), free=(c,pre)=>{ for(let i=1;i<=6;i++){ const k=c.id+"."+pre+i; if(!used(k)) return k; } return null; };
+  const one=(t)=>comps.find(c=>c.t===t), dP=one("distP"), dT=one("distT"), pu=one("pu"), su=one("su");
+  const link=(a,dist,pre)=>{ if(!dist||used(a)) return; const b=free(dist,pre); if(b) hoses.push({a,b}); };
+  if(pu){ link(pu.id+".P",dP,"P"); link(pu.id+".T",dT,"T"); }
+  if(su) link(su.id+".OUT",dP,"P"); }
 function loadHose(){ fluidCache=null; const d=store.get(hoseKey(),null); comps=(d&&Array.isArray(d.comps))?d.comps:[]; hoses=(d&&Array.isArray(d.hoses))?d.hoses:[];
   comps=comps.filter(c=>c&&T[c.t]); comps.forEach(c=>{ if(T[c.t].adj&&(typeof c.set!=="number"||isNaN(c.set))) c.set=SETDEF()[c.t]; if(c.t==="sensLS"&&c.dir==null) c.legacyDir=true; });
-  nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; if(!comps.length) baseSupply(); }
+  nextId=comps.reduce((a,c)=>Math.max(a,c.id),0)+1; if(!comps.length) baseSupply(); else if(!hoses.length) linkSupply(); }
 
 function motorPlan(a){ // returns plan for motors
   const p=APP.prob;
