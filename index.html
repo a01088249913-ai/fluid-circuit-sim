@@ -1878,25 +1878,45 @@ function partArt(t,w,h,sym,c){
       o.push(`<rect x="12" y="20" width="88" height="44" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="5 3"/><path d="M30 26 L42 42 L30 58 L18 42Z" ${st} fill="${F}"/>`); L(22,42,38,42); L(30,30,30,54,1); 
       o.push(`<rect x="50" y="28" width="22" height="28" ${st} fill="${F}"/>`); arrowTo(54,52,68,32); spring(72,42,1,8);
       o.push(`<path d="M86 26 L98 42 L86 58 L74 42Z" ${st} fill="${F}"/>`); L(86,32,86,52); L(4,42,12,42); L(100,42,106,42); o.push(`<circle cx="60" cy="90" r="12" ${st}/>`); arrowTo(54,96,66,84); L(60,64,60,78); }
-    else if(t==="relief"||t==="prv"||t==="cbv"||t==="ps"){ const bx=w/2-18, bxx=36;
-      o.push(`<rect x="${bx}" y="14" width="${bxx}" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); spring(w/2,44,1,1); o.push(`<path d="M${w/2-6} 46 l12 4 l-12 4 l12 4" ${st}/>`);
-      if(t==="ps"){ o.push(`<rect x="${bx}" y="14" width="${bxx}" height="30" stroke="${K}" fill="${F}"/><path d="M${bx+6} 22 h8 l8 -6 M${bx+24} 22 h6" ${st}/><circle cx="${bx+14}" cy="22" r="1.6" fill="${K}"/>`); L(w/2,44,w/2,52); }
-      else if(t==="relief"){ arrowTo(bx+bxx-4,22,bx+6,22); o.push(`<path d="M${bx} 30 H${bx-14} V8 H${w/2} V14" ${st} stroke-dasharray="4 3"/>`); L(28,80,28,30); L(28,30,bx,30); L(68,80,68,30); L(68,30,bx+bxx,30); }
-      else { arrowTo(bx+6,29,bx+bxx-4,29); o.push(`<path d="M${t==="prv"?bx+bxx:bx} 29 H${t==="prv"?bx+bxx+8:bx-8} V8 H${w/2} V14" ${st} stroke-dasharray="4 3"/>`); L(14,30,bx,30); L(bx+bxx,30,82,30);
-        if(t==="cbv"){ o.push(`<path d="M${bx-4} 30 V52 H${bx+bxx+4} V30" ${st}/><circle cx="${w/2+2}" cy="52" r="4" ${st} fill="${F}"/><path d="M${w/2-6} 47 L${w/2-2} 52 L${w/2-6} 57" ${st}/>`); } } }
+    // check-valve symbol: conical seat (V) + ball; free flow goes from the seat apex toward the ball
+    const chk=(x1,x2,y,dir,spr)=>{ const cx=(x1+x2)/2, a=cx-dir*9, b=cx+dir*5, bc=cx+dir*7;
+      o.push(`<path d="M${b} ${y-10} L${a} ${y} L${b} ${y+10}" ${st}/><circle cx="${bc}" cy="${y}" r="6.5" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      if(spr){ let d=`M${bc+dir*7} ${y}`; for(let i=1;i<=5;i++) d+=` L${bc+dir*(7+i*3)} ${y+(i%2?-5:5)}`; o.push(`<path d="${d}" ${st}/>`); } };
+    if(t==="ps"){ const bx=w/2-18;
+      o.push(`<rect x="${bx}" y="10" width="36" height="28" stroke="${K}" stroke-width="1.4" fill="${F}"/><path d="M${bx+6} 20 h8 l9 -6 M${bx+24} 20 h6" ${st}/><circle cx="${bx+14}" cy="20" r="1.6" fill="${K}"/>`);
+      L(w/2,38,w/2,52); }
+    else if(t==="relief"){ // NC, pilot from the inlet (1차측 P), spring opposite, outlet to tank
+      const bx=34, by=22, bw2=34, bh2=28;
+      o.push(`<rect x="${bx}" y="${by}" width="${bw2}" height="${bh2}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      L(28,80,28,by+bh2-7); L(28,by+bh2-7,bx,by+bh2-7); L(68,80,68,by+bh2-7); L(68,by+bh2-7,bx+bw2,by+bh2-7);   // P in (left), T out (right)
+      arrowTo(bx+5,by+8,bx+bw2-4,by+8);                                                                                 // offset arrow = normally closed
+      o.push(`<path d="M28 ${by+bh2-7} H18 V10 H${bx+bw2/2} V${by}" ${st} stroke-dasharray="4 3"/>`);                      // pilot from P (inlet)
+      o.push(`<circle cx="28" cy="${by+bh2-7}" r="2.4" fill="${K}"/>`);
+      { let d=`M${bx+bw2/2} ${by+bh2}`; for(let i=1;i<=6;i++) d+=` L${bx+bw2/2+(i%2?-6:6)} ${by+bh2+i*3}`; o.push(`<path d="${d}" ${st}/>`); }
+      arrowTo(bx+6,by+bh2+20,bx+bw2-6,by+bh2+4); }                                                                     // adjustable spring
+    else if(t==="prv"||t==="cbv"){
+      const bx=31, by=12, bw2=34, bh2=28, y=30;
+      L(14,y,bx,y); L(bx+bw2,y,82,y);
+      o.push(`<rect x="${bx}" y="${by}" width="${bw2}" height="${bh2}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
+      if(t==="prv"){ arrowTo(bx+4,y,bx+bw2-4,y);                                                                       // normally open, in line
+        o.push(`<path d="M76 ${y} V4 H${bx+bw2/2} V${by}" ${st} stroke-dasharray="4 3"/><circle cx="76" cy="${y}" r="2.4" fill="${K}"/>`); }   // pilot from outlet (2차측)
+      else { arrowTo(bx+4,by+7,bx+bw2-4,by+7);                                                                         // normally closed, offset
+        o.push(`<path d="M20 ${y} V4 H${bx+bw2/2} V${by}" ${st} stroke-dasharray="4 3"/><circle cx="20" cy="${y}" r="2.4" fill="${K}"/>`);  // pilot from inlet
+        o.push(`<path d="M24 ${y} V54 H72 V${y}" ${st}/><circle cx="24" cy="${y}" r="2.4" fill="${K}"/><circle cx="72" cy="${y}" r="2.4" fill="${K}"/>`); chk(30,66,54,-1,false); }   // reverse free-flow check
+      { let d=`M${bx+bw2} ${by+bh2/2+6}`; } 
+      { let d=`M${bx+bw2/2} ${by+bh2}`; for(let i=1;i<=4;i++) d+=` L${bx+bw2/2+(i%2?-5:5)} ${by+bh2+i*3}`; if(t==="prv") o.push(`<path d="${d}" ${st}/>`); }
+      if(t==="cbv") { let d=`M${bx+bw2} ${by+6}`; for(let i=1;i<=4;i++) d+=` L${bx+bw2+i*3} ${by+6+(i%2?-4:4)}`; o.push(`<path d="${d}" ${st}/>`); } }
     else if(t==="gauge"){ o.push(`<circle cx="38" cy="34" r="20" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); arrowTo(30,44,46,24); L(38,54,38,78); }
     else if(t==="distP"||t==="distT"){ L(16,24,w-16,24,2); }
     else if(t==="sensS"){ o.push(`<path d="M32 6 L50 24 L32 42 L14 24 Z" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(28,15,28,33); L(36,15,36,33); L(14,46,50,46,1.2); o.push(`<path d="M32 40 l3 3 l-3 3 l-3 -3z" ${st}/>`); }
     else if(t==="sensLS"){ o.push(`<rect x="18" y="12" width="36" height="30" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(18,12,54,42); o.push(`<path d="M24 20 h8 l8 -4 M42 20 h6" ${st}/><circle cx="32" cy="20" r="1.6" fill="${K}"/>`); spring(36,12,1,1); o.push(`<path d="M30 10 l6 -4 l-6 -4 l6 -4" ${st}/>`); o.push(`<path d="M30 42 V52 a6 6 0 0 0 12 0 V42" ${st} fill="${F}"/>`); }
     else if(t==="tee"){ o.push(`<path d="M16 30 H94 M42 30 V52 M68 30 V52" stroke="${K}" stroke-width="1.6" fill="none"/><circle cx="42" cy="30" r="3" fill="${K}"/><circle cx="68" cy="30" r="3" fill="${K}"/>`); }
     else if(t==="check"||t==="pcheck"){ const y=h/2;
-      L(14,y,w/2-10,y); L(w/2+10,y,w-14,y);
-      o.push(`<path d="M${w/2-12} ${y-10} L${w/2+2} ${y} L${w/2-12} ${y+10}" ${st}/><circle cx="${w/2+2}" cy="${y}" r="7" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);   // seat + ball: free flow IN→OUT
-      if(t==="check") o.push(`<path d="M${w/2+10} ${y} l3 -5 l3 10 l3 -10 l3 10 l3 -5" ${st}/>`);
-      else { o.push(`<rect x="${w/2-18}" y="${y-16}" width="40" height="32" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`); L(48,y+16,48,54); o.push(`<path d="M48 ${y+12} l-4 -6 h8z" fill="${K}"/>`); } }
+      L(14,y,w/2-9,y); L(w/2+25,y,w-14,y); chk(14,w-14,y,1,true); o.push(`<path d="M${w/2+5} ${y-10} V${y+10}" stroke="${K}" stroke-width="0"/>`);                                   // free flow IN → OUT
+      if(t==="pcheck"){ o.push(`<rect x="${w/2-18}" y="${y-16}" width="40" height="32" stroke="${K}" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`); o.push(`<path d="M48 54 V${y+6}" ${st} stroke-dasharray="4 3"/>`); } }
     else if(t==="fcv1"||t==="fcv2"){ const y=26; L(14,y,36,y); L(60,y,82,y);
       o.push(`<path d="M38 ${y-10} q10 10 0 20 M58 ${y-10} q-10 10 0 20" ${st}/>`); arrowTo(32,y+14,64,y-14);
-      if(t==="fcv1"){ o.push(`<path d="M24 ${y} V${y+18} H72 V${y}" ${st}/><path d="M42 ${y+12} L52 ${y+18} L42 ${y+24}" ${st}/><circle cx="54" cy="${y+18}" r="5" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); } }
+      if(t==="fcv1"){ o.push(`<path d="M22 ${y} V${y+20} H36 M60 ${y+20} H74 V${y}" ${st}/><circle cx="22" cy="${y}" r="2.4" fill="${K}"/><circle cx="74" cy="${y}" r="2.4" fill="${K}"/>`); chk(36,60,y+20,1,false); L(36,y+20,39,y+20); } }
     else if(t==="qev"){ L(14,26,34,26); L(62,26,82,26); o.push(`<rect x="34" y="14" width="28" height="24" ${st} fill="${F}"/><circle cx="48" cy="26" r="5" ${st}/>`); L(48,38,48,44); exhaustTri(48,44); }
     label(T[t].n,h-2);
     return o.join("");
@@ -2513,7 +2533,7 @@ function renderAlloc(){
 // ---------- tabs & lifecycle ----------
 $("btabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const t=b.dataset.t; document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire"; store.set("btab",t); if(t==="wire"){ if(vb&&vb.fresh) vb=null; buildUnits(); APP.resetMachine(); wSig=""; requestAnimationFrame(wireTick); } else { hSig=""; requestAnimationFrame(hoseTick); } });
 
-window.BUILD={ origFluidSVG, MT,
+window.BUILD={ origFluidSVG, MT, symOf:(t)=>partArt(t,T[t].w,T[t].h,true,null), T,
   machineOpts(sp){ return {plumb:lastPlumb, speed:lastSpeed, sensors:lastSens, netEval:useWire?currentNetEval():null, fluid:fluidEval}; },
   load(){
     loadHose(); sel=null; pend=null; renderPalette();
