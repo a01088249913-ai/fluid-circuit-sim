@@ -1478,7 +1478,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
       if(v) out.push(`<text x="${x+21}" y="${y+25}" font-size="8.5" font-weight="700" fill="#e8742b">동작</text>`); }
     const isS=/^(S|LS|PS)/.test(n.l), isPB=/^PB/.test(n.l);
     const gSym=prob.set==="G"&&!s3&&/^(LS|PB|T\d|ES|PS)/.test(n.l), lxo=gSym?(n.nc!==gAtRest(n.l)?26:36):14;
-    out.push(`<text x="${x-lxo}" y="${s3?y+22:y+30}" font-size="11.5" text-anchor="end" fill="${isS?"var(--minus)":"var(--ink)"}" font-weight="${isS||isPB?600:500}">${n.l==="ES"&&prob.set==="G"?"ES1":n.l}${isPB&&prob.set!=="G"?" E":""}</text>`);
+    out.push(`<text x="${x-lxo}" y="${s3?y+22:y+30}" font-size="11.5" text-anchor="end" fill="${isS?"var(--minus)":"var(--ink)"}" font-weight="${isS||isPB?600:500}">${n.l==="ES"&&prob.set==="G"?(n.nc?"ES1":""):n.l}${isPB&&prob.set!=="G"?" E":""}</text>`);
     const prox=/^S\d/.test(n.l);
     if(prox&&!s3){ // proximity sensor symbol: contact + diamond
       out.push(`<path d="M${x+15} ${y+21} l6 6 l-6 6 l-6 -6 z" fill="none" stroke="${c}" stroke-width="1.6"/><line x1="${x+3}" y1="${y+27}" x2="${x+9}" y2="${y+27}" stroke="${c}" stroke-width="1.4" stroke-dasharray="2 2"/>`); }
@@ -1527,7 +1527,9 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   const isBusR=(r)=>{ const c=r.s&&r.s.items[0]; return !!(c&&c.t==="c"&&c.l==="ES"&&c.nc&&r.s.items.length>1); };
   const lastOcc={}; L.rungs.forEach((r,i)=>r.out.forEach((o,j)=>{ if(/^[YH]/.test(o.coil)) lastOcc[o.coil]=i+"|"+j; }));
   const isLink=(i,j)=>{ const c=L.rungs[i].out[j].coil; return /^[YH]/.test(c)&&lastOcc[c]!==i+"|"+j; };
-  const pos=[], esCol={}; { let XX=X; L.rungs.forEach((r,i)=>{ if(isBusR(r)&&!(i>0&&isBusR(L.rungs[i-1]))){ esCol[i]=XX+CW/2; XX+=CW+8; }
+  const esNO=(r)=>{ const c=r&&r.s&&r.s.items[0]; return !!(c&&c.t==="c"&&c.l==="ES"&&!c.nc&&r.s.items.length===1); };
+  let railBreak=null;
+  const pos=[], esCol={}, esRail={}; { let XX=X; L.rungs.forEach((r,i)=>{ if(isBusR(r)&&!(i>0&&isBusR(L.rungs[i-1]))){ if(i>0&&esNO(L.rungs[i-1])){ esRail[i]=XX+6; XX+=56; } else { esCol[i]=XX+CW/2; XX+=CW+8; } }
     const x=XX+CW/2, xs=[]; let xx=x; r.out.forEach((o,j)=>{ xs.push(xx); xx+=Math.max(lay[i].os[j].w,1)*CW; }); pos.push({x,xs}); XX+=lay[i].w*CW+8; }); }
   const coilX={}; L.rungs.forEach((r,i)=>r.out.forEach((o,j)=>{ if(!isLink(i,j)) coilX[o.coil]=pos[i].xs[j]; }));
   const anyLink=L.rungs.some((r,i)=>r.out.some((o,j)=>isLink(i,j)));
@@ -1539,7 +1541,18 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     const structEdited=base&&baseL.rungs[i]&&S.skel(r.s)+r.out.map(o=>S.skel(o.e)).join()!==S.skel(baseL.rungs[i].s)+baseL.rungs[i].out.map(o=>S.skel(o.e)).join();
     if(diff&&!diff.same&&diff.struct) out.push(`<rect x="${x-CW/2+2}" y="${TOP-8}" width="${l.w*CW-4}" height="${yCoil-TOP+50}" rx="8" fill="none" stroke="var(--fix)" stroke-width="2" stroke-dasharray="5 4"/>`);
     let pOut;
-    if(bus){
+    if(bus&&(esRail[i]!=null||busX0==="rail")){
+      if(esRail[i]!=null){ const cx=esRail[i]+16, yr=TOP-14, c0=r.s.items[0]; busPin=!m.val("ES"); busX0="rail"; railBreak={x1:cx-12,x2:cx+12,pin:busPin};
+        const K="var(--ink)"; wire(cx-12,yr,cx-8,yr,true); wire(cx+8,yr,cx+12,yr,busPin);
+        out.push(`<line x1="${cx+8}" y1="${yr-10}" x2="${cx+8}" y2="${yr}" stroke="${K}" stroke-width="2"/><line x1="${cx-8}" y1="${yr}" x2="${cx+11}" y2="${yr-9}" stroke="${K}" stroke-width="2"/><circle cx="${cx-8}" cy="${yr}" r="2.4" fill="${K}"/>`);
+        out.push(`<text x="${cx+14}" y="${yr+16}" font-size="11.5" font-weight="600" text-anchor="start" fill="var(--ink)">ES1</text>`);
+        const px=pos[i-1].x; out.push(`<path d="M${px-4} ${TOP+26} H${cx+2} V${yr-3}" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/>`);
+        if(edt) out.push(`<rect class="hit" data-path="${i}|s|,0" x="${cx-14}" y="${yr-14}" width="28" height="22" rx="5"><title>b접점 ES1</title></rect>`); }
+      out.push(`<circle cx="${x}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(x,TOP-14,x,TOP,busPin);
+      const S1={t:"s",items:r.s.items.slice(1)}, h1=size(S1).h;
+      pOut=drawFrom(r.s,1,x,TOP,busPin,`${i}|s|`); wire(x,TOP+h1*RH,x,TOP+l.ps.h*RH,pOut);
+    }
+    else if(bus){
       if(esCol[i]!=null){ const ex=esCol[i]; busPin=draw(r.s.items[0],ex,TOP,true,`${i}|s|,0`); busX0=ex; out.push(`<circle cx="${ex}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(ex,TOP-14,ex,TOP,true);
         out.push(`<text x="${ex}" y="${TOP+RH+16}" font-size="9.5" text-anchor="middle" fill="var(--muted)">비상정지 공통선</text>`);
         const pr=i>0&&L.rungs[i-1].s.items[0]; if(pr&&pr.t==="c"&&pr.l==="ES"&&!pr.nc){ const px=pos[i-1].x; out.push(`<line x1="${px+6}" y1="${TOP+26}" x2="${ex-4}" y2="${TOP+26}" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${(px+ex)/2}" y="${TOP-2}" font-size="9.5" text-anchor="middle" fill="var(--muted)">ES1 전환접점 (유지형)</text>`); } }
@@ -1550,6 +1563,15 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
       out.push(`<circle cx="${x}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(x,TOP-14,x,TOP,true);
     }
     const yB=TOP+l.ps.h*RH, xs=pos[i].xs;
+    const one=(e)=>e&&e.items.length===1&&e.items[0].t==="c"?e.items[0]:null;
+    const co=prob.set==="G"&&r.out.length===2&&one(r.out[0].e)&&one(r.out[1].e)&&one(r.out[0].e).l===one(r.out[1].e).l&&one(r.out[0].e).nc&&!one(r.out[1].e).nc;
+    if(co){ const c=one(r.out[0].e), v=!!m.val(c.l), K="var(--ink)", y0=yB, x0=xs[0], x1=xs[1];
+      wire(x,y0,x0,y0,pOut); wire(x0,y0,x0,y0+14,pOut);
+      out.push(`<line x1="${x0}" y1="${y0+14}" x2="${x0+6}" y2="${y0+40}" stroke="${K}" stroke-width="2"/><line x1="${x0-6}" y1="${y0+38}" x2="${x0+8}" y2="${y0+38}" stroke="${K}" stroke-width="2"/><line x1="${x0+12}" y1="${y0+30}" x2="${x0+22}" y2="${y0+30}" stroke="${K}" stroke-width="2"/>`);
+      out.push(`<text x="${x0-12}" y="${y0+30}" font-size="11.5" text-anchor="end" fill="var(--ink)">${c.l}</text>`);
+      const onNC=pOut&&!v, onNO=pOut&&v; wire(x0,y0+38,x0,yCoil,onNC); wire(x0+22,y0+30,x1,y0+30,onNO); wire(x1,y0+30,x1,yCoil,onNO);
+      r.out.forEach((o,j)=>{ coilPath=`${i}|${j}`; coilSym(o.coil,xs[j],!!m.coil[o.coil],null); coilPath=null; out.push(`<circle cx="${xs[j]}" cy="${yBot}" r="3" fill="var(--ink)"/>`); });
+      X=x-CW/2+l.w*CW+8; return; }
     const outsN=r.out.filter(o=>!o.tap).length;
     if(outsN>1){ const lastNT=xs[r.out.map((o,j)=>o.tap?-1:j).filter(j=>j>=0).pop()]; wire(x,yB,lastNT,yB,pOut); out.push(`<circle cx="${x}" cy="${yB}" r="3" fill="var(--ink)"/>`); }
     let prev=null;
@@ -1573,7 +1595,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   if(mE){ const gx=X+CW/2; out.push(`<g class="newrung" style="cursor:pointer"><rect x="${X+4}" y="${TOP-4}" width="${CW-8}" height="${yCoil-TOP+30}" rx="8" fill="none" stroke="var(--edit)" stroke-width="1.6" stroke-dasharray="6 5"/><circle cx="${gx}" cy="${(TOP+yCoil)/2}" r="14" fill="var(--edit)"/><text x="${gx}" y="${(TOP+yCoil)/2+6}" font-size="20" font-weight="700" text-anchor="middle" fill="#fff">+</text><text x="${gx}" y="${(TOP+yCoil)/2+34}" font-size="11" font-weight="600" text-anchor="middle" fill="var(--edit)">새 줄</text><title>회로 한 줄 추가</title></g>`); X+=CW+8; }
   out.push(...insPts);
   const W=X+20;
-  out.unshift(`<line x1="40" y1="${TOP-14}" x2="${W-10}" y2="${TOP-14}" stroke="var(--plus)" stroke-width="2.6"/><line x1="40" y1="${yBot}" x2="${W-10}" y2="${yBot}" stroke="var(--minus)" stroke-width="2.6"/>`);
+  out.unshift(railBreak?`<line x1="40" y1="${TOP-14}" x2="${railBreak.x1}" y2="${TOP-14}" stroke="var(--plus)" stroke-width="2.6"/><line x1="${railBreak.x2}" y1="${TOP-14}" x2="${W-10}" y2="${TOP-14}" stroke="${railBreak.pin?"var(--plus)":"var(--ink)"}" stroke-width="2.6"/>`:`<line x1="40" y1="${TOP-14}" x2="${W-10}" y2="${TOP-14}" stroke="var(--plus)" stroke-width="2.6"/>`); out.unshift(`<line x1="40" y1="${yBot}" x2="${W-10}" y2="${yBot}" stroke="var(--minus)" stroke-width="2.6"/>`);
   out.unshift(`<text x="6" y="${TOP-10}" font-size="12" font-weight="600" fill="var(--plus)">24V</text><text x="10" y="${yBot+4}" font-size="12" font-weight="600" fill="var(--minus)">0V</text>`);
   const svg=$(tid||"ladder"); let sc=1;
   if(!tid){ const cw=(svg.parentElement&&svg.parentElement.clientWidth||0)-4; if(cw>W) sc=Math.min(1.7,cw/W); }
