@@ -211,7 +211,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
   <header class="top">
     <div class="brand">
       <h1>공유압 회로 시뮬레이터</h1>
-      <span class="sub">설비보전기사 실기 공개문제 — 진단·구성 16개 + 과정평가형(V1/V2) 12개 + 기능사 16개 · 회로 구성부터 유지보수까지</span>
+      <span class="sub">설비보전 실기 공개문제 — 기사 16개 + 과정평가형(V1/V2) 12개 + 기능사 16개 · 회로 구성부터 유지보수까지</span>
       <span class="sub maker">제작: 한국폴리텍대학 진주캠퍼스 자동화과 장성욱</span>
     </div>
     <div class="clock" title="실기 과제 1시간 모의 타이머">
@@ -226,7 +226,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
   <section class="pick">
     <span class="lbl">문제</span>
     <div class="seg" id="setSeg">
-      <button data-s="A" aria-pressed="true" title="진단 및 구성 공개문제 (실린더 2개, 8문제)">진단·구성</button>
+      <button data-s="A" aria-pressed="true" title="설비보전기사 공개문제 (공기압·유압 시스템 진단 및 구성, 각 8문제)">기사</button>
       <button data-s="V" aria-pressed="false" title="과정평가형 V1/V2 공개문제 (실린더 3개 / 유압 6문제)">과정평가형</button>
       <button data-s="G" aria-pressed="false" title="설비보전기능사 공개문제 (공기압 8 · 유압 8, 주어진 회로 그대로 구성)">기능사</button>
     </div>
@@ -1153,7 +1153,7 @@ function reducingText(p){
 // ---------- state ----------
 let kind=store.get("kind","P"), no=store.get("no",1), mode=store.get("mode","base"), pset=store.get("pset","A");
 const plist=()=>pset==="V"?(kind==="P"?P.VPN:P.VHY):pset==="G"?(kind==="P"?P.GPN:P.GHY):(kind==="P"?P.PN:P.HY);
-const pname=(p)=>`${p.set==="V"?"과정평가형 ":p.set==="G"?"기능사 ":""}${p.kind==="P"?"공기압":"유압"} ${p.no}번`;
+const pname=(p)=>`${p.set==="V"?"과정평가형 ":p.set==="G"?"기능사 ":"기사 "}${p.kind==="P"?"공기압":"유압"} ${p.no}번`;
 let prob, baseL, fixL, curL, machine, showAns=false, simProb, ladVer=0;
 let rnd=null;            // random-fault practice {key, L, n}
 let mock=null;           // mock exam state
@@ -1300,7 +1300,7 @@ function renderStatic(){
 
 function renderSheet(){
   const p=prob, isP=p.kind==="P";
-  $("sheetSub").textContent=p.set==="G"?`설비보전기능사 ${isP?"제1과제 공기압회로 구성":"제2과제 유압회로 구성"} · ${p.no}번`:p.set==="V"?`과정평가형 ${isP?"제1과제 공기압 회로 구성":"제2과제 유압 회로 구성"} · ${p.no}번`:`${isP?"제1과제 공기압시스템":"제2과제 유압시스템"} 진단 및 구성 · ${p.no}번`;
+  $("sheetSub").textContent=p.set==="G"?`설비보전기능사 ${isP?"제1과제 공기압회로 구성":"제2과제 유압회로 구성"} · ${p.no}번`:p.set==="V"?`과정평가형 ${isP?"제1과제 공기압 회로 구성":"제2과제 유압 회로 구성"} · ${p.no}번`:`설비보전기사 ${isP?"제1과제 공기압시스템":"제2과제 유압시스템"} 진단 및 구성 · ${p.no}번`;
   const sensTxt=(()=>{ const g={}; Object.entries(p.sensors).forEach(([k,[a,e]])=>{ (g[a]=g[a]||[])[e]=k; }); return Object.entries(g).map(([a,[s0,s1]])=>`${p.act.find(x=>x.id===a).kind==="motor"?"모터":"실린더"} ${a}: ${s0}(후진 끝)·${s1}(전진 끝)`).join(" / ")+(Object.keys(p.sensors).some(k=>/^S\d/.test(k))?" · S는 정전용량형 3선식 센서":""); })();
   const req=isP?[
     "서비스 유닛 작업압력 0.5±0.05 MPa",
@@ -1844,7 +1844,7 @@ window.APP.load=load; window.APP.markDone=markDone;
 // ---------- mock exam ----------
 function mockRender(){
   const bar=$("mockBar"); document.body.classList.toggle("mock",!!mock); bar.hidden=!mock; if(!mock) return;
-  const name=`${mock.set==="V"?"과정평가형 ":mock.set==="G"?"기능사 ":""}${mock.kind==="P"?"제1과제 공기압":"제2과제 유압"} ${mock.no}번`;
+  const name=`${mock.set==="V"?"과정평가형 ":mock.set==="G"?"기능사 ":"기사 "}${mock.kind==="P"?"제1과제 공기압":"제2과제 유압"} ${mock.no}번`;
   const st=(r)=>r?(r.ok?`<span class="chip ok">합격</span>`:`<span class="chip bad">불합격</span>`):`<span class="chip">미평가</span>`;
   const list=(r)=>r?`<div class="res">${r.items.map(([ok,t,d])=>item(ok,t,d)).join("")}</div>`:"";
   bar.innerHTML=`<div class="card-h"><h2>모의시험 · ${name}</h2><span class="sub">평가 기회는 단계마다 한 번 · 모범 보기·정정 예시는 잠겨 있습니다</span></div>
