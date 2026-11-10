@@ -426,7 +426,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
         return { s: parse(e, idc), out: [{ e: null, coil: c }] };
       }
       const [pre, ...outs] = d;
-      return { s: parse(pre, idc), out: outs.map(([e, c]) => ({ e: parse(e, idc), coil: c })) };
+      return { s: parse(pre, idc), out: outs.map(([e, c]) => (e === "^" ? { e: parse("", idc), coil: c, tap: true } : { e: parse(e, idc), coil: c })) };
     });
     rungs.forEach((r) => { r.s = normS(r.s); r.out.forEach((o) => (o.e = normS(o.e))); });
     const contacts = [];
@@ -532,7 +532,8 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     if (this.netEval) { const r = this.netEval(this); coil = r.coil; this.short = r.short; }
     else for (const r of this.L.rungs) {
       const pin = flow(r.s, true, val, marks);
-      for (const o of r.out) { const v = flow(o.e, pin, val, marks); coil[o.coil] = coil[o.coil] || v; marks["coil:" + o.coil] = coil[o.coil]; }
+      let last = pin;
+      for (const o of r.out) { const v = o.tap ? last : flow(o.e, pin, val, marks); last = v; coil[o.coil] = coil[o.coil] || v; marks["coil:" + o.coil] = coil[o.coil]; }
     }
     this.marks = marks;
     let changed = false;
@@ -1001,10 +1002,10 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     rungs: ["(PB1 S2 | K1) /K2 = K1", "(S1 K1 | K2) /K3 = K2", "LS2 K2 = T1", "T1 = K3", "K1 = Y1", ["K2", ["", "Y2"], ["LS1", "Y3"]]] });
   gp(7, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", dbl("Y4", "Y3"), 1)], sensors: L4, inline: { A: ["qev:cap"], B: ["fcv:cap"] }, op: "cont",
     seq: [["A+"], ["B-"], ["B+"], ["A-"]],
-    rungs: ["(PB1 | K1) /C1 = K1", "(K1 | K2) /K3 = K2", "K2 LS3 | K3 /LS1 = K3", ["K2", ["", "Y1"], ["LS2", "Y3"]], ["K3", ["", "Y4"], ["LS4", "Y2"]], "K3 LS4 = C1", "PB2 = CR1"] });
+    rungs: ["(PB1 | K1) /C1 = K1", "(K1 | K2) /K3 = K2", "K2 LS3 | K3 /LS1 = K3", ["K2", ["", "Y1"], ["LS2", "Y3"]], ["K3", ["", "Y4"], ["LS4", "Y2"], ["^", "C1"]], "PB2 = CR1"] });
   gp(8, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", dbl("Y3", "Y4"))], sensors: L4, inline: { A: ["fcv:rod"], B: ["fcv:cap"] }, op: "estop",
     seq: [["A+"], ["B+"], ["B-"], ["A-"]],
-    rungs: [["ES", ["", "K1"], ["K1", "Y4"], ["K1", "Y2"]], "/ES (PB1 LS1 | K2) /LS4 = K2", "/ES K2 LS2 = K3", ["/ES K2", ["", "Y1"], ["K3", "Y3"]], ["/ES /K2", ["LS3 /K1", "K4"], ["", "Y4"], ["K4", "Y2"]]] });
+    rungs: [["ES", ["", "K1"], ["K1", "Y4"], ["K1", "Y2"]], "/ES (PB1 LS1 | K2) /LS4 = K2", ["/ES K2", ["LS2", "K3"], ["", "Y1"], ["K3", "Y3"]], ["/ES /K2", ["LS3 /K1", "K4"], ["", "Y4"], ["K4", "Y2"]]] });
 
   const A2 = { LS1: ["A", 0], LS2: ["A", 1] }, A3 = { LS1: ["A", 0], LS2: ["A", 0.5], LS3: ["A", 1] };
   const AA = [["A+"], ["A-"]];
@@ -1498,8 +1499,8 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     else {
       out.push(`<rect x="${x-18}" y="${y}" width="36" height="24" rx="2" fill="${f}" stroke="${s}" stroke-width="1.6"/>`);
       if(name[0]==="Y") out.push(`<line x1="${x-10}" y1="${y+20}" x2="${x+10}" y2="${y+4}" stroke="${s}" stroke-width="1.4"/>`);
-      if(name[0]==="T") out.push(`<text x="${x}" y="${y+16}" font-size="10" text-anchor="middle" fill="${s}">3s</text>`);
-      if(/^C\d/.test(name)) out.push(`<text x="${x}" y="${y+16}" font-size="10" text-anchor="middle" fill="${s}">CNT</text>`);
+      if(name[0]==="T") out.push(`<text x="${x}" y="${y+16}" font-size="10" text-anchor="middle" fill="${s}">${((simProb&&simProb.tset)||3000)/1000}s</text>`);
+      if(/^C\d/.test(name)) out.push(`<text x="${x}" y="${y+16}" font-size="10" text-anchor="middle" fill="${s}">CNT 3</text>`);
       if(/^CR/.test(name)) out.push(`<text x="${x}" y="${y+16}" font-size="10" text-anchor="middle" fill="${s}">RST</text>`);
     }
     const lab=/^CR/.test(name)?"C1 리셋":name;
@@ -1508,24 +1509,52 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     wire(x,y+24,x,yBot,on);
     if((mE||(base&&/^Y/.test(name)))&&coilPath) out.push(`<rect class="hit chit" data-coil="${coilPath}" x="${x-24}" y="${y-4}" width="48" height="50" rx="6"><title>코일 ${name}</title></rect>`);
   }
+  // ---- layout pass: common E-stop bus (/ES first) and solenoids fed from two places ----
+  const isBusR=(r)=>{ const c=r.s&&r.s.items[0]; return !!(c&&c.t==="c"&&c.l==="ES"&&c.nc&&r.s.items.length>1); };
+  const lastOcc={}; L.rungs.forEach((r,i)=>r.out.forEach((o,j)=>{ if(/^[YH]/.test(o.coil)) lastOcc[o.coil]=i+"|"+j; }));
+  const isLink=(i,j)=>{ const c=L.rungs[i].out[j].coil; return /^[YH]/.test(c)&&lastOcc[c]!==i+"|"+j; };
+  const pos=[], esCol={}; { let XX=X; L.rungs.forEach((r,i)=>{ if(isBusR(r)&&!(i>0&&isBusR(L.rungs[i-1]))){ esCol[i]=XX+CW/2; XX+=CW+8; }
+    const x=XX+CW/2, xs=[]; let xx=x; r.out.forEach((o,j)=>{ xs.push(xx); xx+=Math.max(lay[i].os[j].w,1)*CW; }); pos.push({x,xs}); XX+=lay[i].w*CW+8; }); }
+  const coilX={}; L.rungs.forEach((r,i)=>r.out.forEach((o,j)=>{ if(!isLink(i,j)) coilX[o.coil]=pos[i].xs[j]; }));
+  const anyLink=L.rungs.some((r,i)=>r.out.some((o,j)=>isLink(i,j)));
+  let linkN=0; const nLinks=L.rungs.reduce((a,r,i)=>a+r.out.filter((o,j)=>isLink(i,j)).length,0); let busPin=true, busX0=null;
+  const drawFrom=(S0,k0,x,y,pin,path)=>{ let p=pin, yy=y; for(let k=k0;k<S0.items.length;k++){ const c=S0.items[k]; p=draw(c,x,yy,p,path+","+k); yy+=size(c).h*RH; } return p; };
   L.rungs.forEach((r,i)=>{
-    const l=lay[i], x=X+CW/2;
+    const l=lay[i], x=pos[i].x, bus=isBusR(r);
     diff=base&&showAns?rungDiff(i):null;
-    const structEdited=base&&S.skel(r.s)+r.out.map(o=>S.skel(o.e)).join()!==S.skel(baseL.rungs[i].s)+baseL.rungs[i].out.map(o=>S.skel(o.e)).join();
-    if(diff&&!diff.same&&diff.struct) out.push(`<rect x="${X+2}" y="${TOP-8}" width="${l.w*CW-4}" height="${yCoil-TOP+50}" rx="8" fill="none" stroke="var(--fix)" stroke-width="2" stroke-dasharray="5 4"/>`);
-    const pOut=draw(r.s,x,TOP,true,`${i}|s|`); const yB=TOP+l.ps.h*RH;
-    out.push(`<circle cx="${x}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`);
-    wire(x,TOP-14,x,TOP,true);
-    let xx=x; const xs=[];
-    r.out.forEach((o,j)=>{ xs.push(xx); xx+=Math.max(l.os[j].w,1)*CW; });
-    if(r.out.length>1){ wire(x,yB,xs[xs.length-1],yB,pOut); out.push(`<circle cx="${x}" cy="${yB}" r="3" fill="var(--ink)"/>`); }
+    const structEdited=base&&baseL.rungs[i]&&S.skel(r.s)+r.out.map(o=>S.skel(o.e)).join()!==S.skel(baseL.rungs[i].s)+baseL.rungs[i].out.map(o=>S.skel(o.e)).join();
+    if(diff&&!diff.same&&diff.struct) out.push(`<rect x="${x-CW/2+2}" y="${TOP-8}" width="${l.w*CW-4}" height="${yCoil-TOP+50}" rx="8" fill="none" stroke="var(--fix)" stroke-width="2" stroke-dasharray="5 4"/>`);
+    let pOut;
+    if(bus){
+      if(esCol[i]!=null){ const ex=esCol[i]; busPin=draw(r.s.items[0],ex,TOP,true,`${i}|s|,0`); busX0=ex; out.push(`<circle cx="${ex}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(ex,TOP-14,ex,TOP,true);
+        out.push(`<text x="${ex}" y="${TOP+RH+16}" font-size="9.5" text-anchor="middle" fill="var(--muted)">비상정지 공통선</text>`);
+        const pr=i>0&&L.rungs[i-1].s.items[0]; if(pr&&pr.t==="c"&&pr.l==="ES"&&!pr.nc){ const px=pos[i-1].x; out.push(`<line x1="${px+6}" y1="${TOP+26}" x2="${ex-4}" y2="${TOP+26}" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${(px+ex)/2}" y="${TOP+20}" font-size="9.5" text-anchor="middle" fill="var(--muted)">ES1 전환접점 (유지형)</text>`); } }
+      wire(busX0,TOP+RH,x,TOP+RH,busPin); out.push(`<circle cx="${x}" cy="${TOP+RH}" r="3" fill="var(--ink)"/>`);
+      pOut=drawFrom(r.s,1,x,TOP+RH,busPin,`${i}|s|`);
+    } else {
+      pOut=draw(r.s,x,TOP,true,`${i}|s|`);
+      out.push(`<circle cx="${x}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(x,TOP-14,x,TOP,true);
+    }
+    const yB=TOP+l.ps.h*RH, xs=pos[i].xs;
+    const outsN=r.out.filter(o=>!o.tap).length;
+    if(outsN>1){ const lastNT=xs[r.out.map((o,j)=>o.tap?-1:j).filter(j=>j>=0).pop()]; wire(x,yB,lastNT,yB,pOut); out.push(`<circle cx="${x}" cy="${yB}" r="3" fill="var(--ink)"/>`); }
+    let prev=null;
     r.out.forEach((o,j)=>{
-      const ox=xs[j]; const po=draw(o.e,ox,yB,pOut,`${i}|o${j}|`); const yE=yB+l.os[j].h*RH;
+      const ox=xs[j]; let po, yE;
+      if(o.tap&&prev){ po=prev.po; yE=prev.yE; wire(prev.x,yE,ox,yE,po); out.push(`<circle cx="${prev.x}" cy="${yE}" r="3" fill="var(--ink)"/>`); }
+      else { po=draw(o.e,ox,yB,pOut,`${i}|o${j}|`); yE=yB+l.os[j].h*RH; }
+      prev={x:ox,yE,po};
+      if(isLink(i,j)&&coilX[o.coil]!=null){ const tx=coilX[o.coil], rx=tx+16+((linkN%2)?6:0), yLink=yBot+14+12*(++linkN);
+        wire(ox,yE,ox,yLink,po); wire(ox,yLink,rx,yLink,po); wire(rx,yLink,rx,yCoil-10,po); wire(rx,yCoil-10,tx,yCoil-10,po);
+        out.push(`<circle cx="${tx}" cy="${yCoil-10}" r="3.5" fill="var(--ink)"/><text x="${ox+5}" y="${yLink-4}" font-size="9.5" fill="var(--muted)">→ ${o.coil}</text>`);
+        return; }
+      if(o.coil==="CR1"&&coilX.C1!=null&&coilX.C1<ox){ const cx=coilX.C1+18, yy=yCoil+12;
+        wire(ox,yE,ox,yy,po); wire(ox,yy,cx,yy,po); out.push(`<text x="${cx+4}" y="${yy-4}" font-size="9.5" fill="var(--muted)">리셋</text><circle cx="${cx}" cy="${yy}" r="3" fill="var(--ink)"/>`); return; }
       wire(ox,yE,ox,yCoil,po);
       coilPath=`${i}|${j}`; coilSym(o.coil,ox,!!m.coil[o.coil],structEdited?"var(--edit)":null); coilPath=null;
       out.push(`<circle cx="${ox}" cy="${yBot}" r="3" fill="var(--ink)"/>`);
     });
-    X+=l.w*CW+8;
+    X=x-CW/2+l.w*CW+8;
   });
   if(mE){ const gx=X+CW/2; out.push(`<g class="newrung" style="cursor:pointer"><rect x="${X+4}" y="${TOP-4}" width="${CW-8}" height="${yCoil-TOP+30}" rx="8" fill="none" stroke="var(--edit)" stroke-width="1.6" stroke-dasharray="6 5"/><circle cx="${gx}" cy="${(TOP+yCoil)/2}" r="14" fill="var(--edit)"/><text x="${gx}" y="${(TOP+yCoil)/2+6}" font-size="20" font-weight="700" text-anchor="middle" fill="#fff">+</text><text x="${gx}" y="${(TOP+yCoil)/2+34}" font-size="11" font-weight="600" text-anchor="middle" fill="var(--edit)">새 줄</text><title>회로 한 줄 추가</title></g>`); X+=CW+8; }
   out.push(...insPts);
@@ -1534,7 +1563,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   out.unshift(`<text x="6" y="${TOP-10}" font-size="12" font-weight="600" fill="var(--plus)">24V</text><text x="10" y="${yBot+4}" font-size="12" font-weight="600" fill="var(--minus)">0V</text>`);
   const svg=$(tid||"ladder"); let sc=1;
   if(!tid){ const cw=(svg.parentElement&&svg.parentElement.clientWidth||0)-4; if(cw>W) sc=Math.min(1.7,cw/W); }
-  svg.setAttribute("width",Math.round(W*sc)); svg.setAttribute("height",Math.round((yBot+14)*sc)); svg.setAttribute("viewBox",`0 0 ${W} ${yBot+14}`);
+  const HH=yBot+(anyLink?24+12*nLinks:14); svg.setAttribute("width",Math.round(W*sc)); svg.setAttribute("height",Math.round(HH*sc)); svg.setAttribute("viewBox",`0 0 ${W} ${HH}`);
   svg.innerHTML=out.join("");
 }
 
@@ -2794,7 +2823,7 @@ function compile(L0){
   function para(n,inN){ const out=newNode(); n.items.forEach(b=>{ const o=series(b,inN); merge(o,out); }); return out; }
   let ESB=null; if(L.rungs.some(r=>r.bus)){ ESB=newNode(); att(PLUSN,"ES.2.C"); att(ESB,"ES.2.NC"); }
   const yOf={};
-  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); r.out.forEach(o=>{ const y=o.with&&yOf[o.with]!=null?yOf[o.with]:series(o.e,x); yOf[o.coil]=y; att(y,R(o.coil)+".A1"); att(MINUSN,R(o.coil)+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
+  L.rungs.forEach(r=>{ const x=series(r.s,r.bus?ESB:PLUSN); let lastY=x; r.out.forEach(o=>{ const y=o.tap?lastY:o.with&&yOf[o.with]!=null?yOf[o.with]:series(o.e,x); lastY=y; yOf[o.coil]=y; att(y,R(o.coil)+".A1"); att(MINUSN,R(o.coil)+".A2"); ann["coil:"+o.coil]=coilText(o.coil); }); });
   const groups={}; nodes.forEach((js,i)=>{ const g=nf(i); (groups[g]=groups[g]||[]).push(...js); });
   const ws=[];
   const busOf=(u,pol)=>{ const ids=Object.keys(JACK).filter(i=>i.startsWith(u+"."+pol)); return ids; };
