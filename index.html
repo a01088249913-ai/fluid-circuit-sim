@@ -1434,6 +1434,7 @@ function rungDiff(i){ // compare current rung i to fix rung i
   const ids=new Set(); ca.forEach((c,k)=>{ if(c.l!==cb[k].l||c.nc!==cb[k].nc) ids.add(c.id); });
   return {same:false,struct:false,ids};
 }
+function gAtRest(l){ const sen=simProb.sensors[l], act=sen&&simProb.act.find(q=>q.id===sen[0]); return !!(sen&&act&&act.kind==="cyl"&&sen[1]===(act.rest||0)&&/^LS/.test(l)); }
 function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
   const L=curL, m=machine, val=(l)=>m.val(l), out=[];
   const baseMap=S.contactMap(baseL);
@@ -1456,6 +1457,18 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
       out.push(`<polyline points="${x-12},${y+30} ${x-34},${y+30} ${x-34},${y+38}" fill="none" stroke="#2453c4" stroke-width="2.2"/><line x1="${x-42}" y1="${y+38}" x2="${x-26}" y2="${y+38}" stroke="#2453c4" stroke-width="2.6"/>`);
       const t=(tx,ty,txt,col,anc)=>out.push(`<text x="${tx}" y="${ty}" font-size="9.5" font-weight="700" text-anchor="${anc||"start"}" fill="${col}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${txt}</text>`);
       t(x+4,y+9,"BN 갈","#8a4b20"); t(x-34,y+49,"BU 청→0V","#2453c4","middle"); t(x-5,y+61,"BK 흑","#1d2024","end"); if(n.nc) t(x+16,y+44,"b(NC형)","var(--bad)"); }
+    else if(prob.set==="G"){ // 문제지와 같은 정적 기호 (상태와 무관하게 평상시 모양)
+      const K="var(--ink)", atRest=gAtRest(n.l);
+      const drawClosed=n.nc!==atRest; // b접점 또는 평상시 눌려 있는 a접점 → 닫힌 모양
+      if(drawClosed){ out.push(`<line x1="${x}" y1="${y+16}" x2="${x+11}" y2="${y+16}" stroke="${K}" stroke-width="2"/><line x1="${x}" y1="${y+38}" x2="${x+9}" y2="${y+14}" stroke="${K}" stroke-width="2"/>`); }
+      else out.push(`<line x1="${x}" y1="${y+38}" x2="${x-11}" y2="${y+15}" stroke="${K}" stroke-width="2"/>`);
+      const mx=drawClosed?x+5:x-6, my=y+26;
+      if(/^LS/.test(n.l)){ out.push(`<line x1="${mx-12}" y1="${my}" x2="${mx}" y2="${my}" stroke="${K}" stroke-width="1.2" stroke-dasharray="3 2"/><circle cx="${mx-16}" cy="${my}" r="4" fill="var(--card)" stroke="${K}" stroke-width="1.4"/>`);
+        if(atRest) out.push(`<path d="M${mx-19} ${my-9} v-14 M${mx-13} ${my-9} v-14 M${mx-22} ${my-20} l6 -7 l6 7" fill="none" stroke="${K}" stroke-width="1.3"/>`); }
+      else if(/^PB/.test(n.l)){ out.push(`<line x1="${mx-12}" y1="${my}" x2="${mx}" y2="${my}" stroke="${K}" stroke-width="1.2" stroke-dasharray="3 2"/><path d="M${mx-12} ${my-6} h-4 v12 h4" fill="none" stroke="${K}" stroke-width="1.4"/>`); }
+      else if(/^T\d/.test(n.l)){ out.push(`<path d="M${mx} ${my-3} h-12 M${mx} ${my+3} h-12 M${mx-6} ${my-8} q-8 8 0 16" fill="none" stroke="${K}" stroke-width="1.3"/>`); }
+      else if(n.l==="ES"){ out.push(`<line x1="${mx-12}" y1="${my}" x2="${mx}" y2="${my}" stroke="${K}" stroke-width="1.2" stroke-dasharray="3 2"/><path d="M${mx-12} ${my-6} l-4 6 l4 6" fill="none" stroke="${K}" stroke-width="1.4"/>`); }
+      else if(n.l==="PS"){ out.push(`<rect x="${mx-22}" y="${my-6}" width="12" height="12" fill="none" stroke="${K}" stroke-width="1.2"/><text x="${mx-16}" y="${my+3}" font-size="7" text-anchor="middle" fill="${K}">P</text><line x1="${mx-10}" y1="${my}" x2="${mx}" y2="${my}" stroke="${K}" stroke-width="1.2" stroke-dasharray="3 2"/>`); } }
     else { // blade drawn in its present state: closed = touching, open = swung away
       const cc=cl?(pin?"var(--live)":"var(--ink)"):"#9aa3ad", sw=cl?2.6:2;
       if(n.nc){ out.push(`<line x1="${x}" y1="${y+16}" x2="${x+11}" y2="${y+16}" stroke="var(--ink)" stroke-width="2"/>`);
@@ -1464,7 +1477,8 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
       out.push(`<circle cx="${x+15}" cy="${y+22}" r="3.6" fill="${cl?"#16a34a":"#fff"}" stroke="${cl?"#16a34a":"#9aa3ad"}" stroke-width="1.4"><title>${cl?"닫힘(통전 가능)":"열림"}</title></circle>`);
       if(v) out.push(`<text x="${x+21}" y="${y+25}" font-size="8.5" font-weight="700" fill="#e8742b">동작</text>`); }
     const isS=/^(S|LS|PS)/.test(n.l), isPB=/^PB/.test(n.l);
-    out.push(`<text x="${x-14}" y="${s3?y+22:y+30}" font-size="11.5" text-anchor="end" fill="${isS?"var(--minus)":"var(--ink)"}" font-weight="${isS||isPB?600:500}">${n.l}${isPB?" E":""}</text>`);
+    const gSym=prob.set==="G"&&!s3&&/^(LS|PB|T\d|ES|PS)/.test(n.l), lxo=gSym?(n.nc!==gAtRest(n.l)?26:36):14;
+    out.push(`<text x="${x-lxo}" y="${s3?y+22:y+30}" font-size="11.5" text-anchor="end" fill="${isS?"var(--minus)":"var(--ink)"}" font-weight="${isS||isPB?600:500}">${n.l==="ES"&&prob.set==="G"?"ES1":n.l}${isPB&&prob.set!=="G"?" E":""}</text>`);
     const prox=/^S\d/.test(n.l);
     if(prox&&!s3){ // proximity sensor symbol: contact + diamond
       out.push(`<path d="M${x+15} ${y+21} l6 6 l-6 6 l-6 -6 z" fill="none" stroke="${c}" stroke-width="1.6"/><line x1="${x+3}" y1="${y+27}" x2="${x+9}" y2="${y+27}" stroke="${c}" stroke-width="1.4" stroke-dasharray="2 2"/>`); }
@@ -1528,7 +1542,7 @@ function drawLadder(tid,ann){ ann=ann||null; CW=ann?92:74;
     if(bus){
       if(esCol[i]!=null){ const ex=esCol[i]; busPin=draw(r.s.items[0],ex,TOP,true,`${i}|s|,0`); busX0=ex; out.push(`<circle cx="${ex}" cy="${TOP-14}" r="3" fill="var(--ink)"/>`); wire(ex,TOP-14,ex,TOP,true);
         out.push(`<text x="${ex}" y="${TOP+RH+16}" font-size="9.5" text-anchor="middle" fill="var(--muted)">비상정지 공통선</text>`);
-        const pr=i>0&&L.rungs[i-1].s.items[0]; if(pr&&pr.t==="c"&&pr.l==="ES"&&!pr.nc){ const px=pos[i-1].x; out.push(`<line x1="${px+6}" y1="${TOP+26}" x2="${ex-4}" y2="${TOP+26}" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${(px+ex)/2}" y="${TOP+20}" font-size="9.5" text-anchor="middle" fill="var(--muted)">ES1 전환접점 (유지형)</text>`); } }
+        const pr=i>0&&L.rungs[i-1].s.items[0]; if(pr&&pr.t==="c"&&pr.l==="ES"&&!pr.nc){ const px=pos[i-1].x; out.push(`<line x1="${px+6}" y1="${TOP+26}" x2="${ex-4}" y2="${TOP+26}" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${(px+ex)/2}" y="${TOP-2}" font-size="9.5" text-anchor="middle" fill="var(--muted)">ES1 전환접점 (유지형)</text>`); } }
       wire(busX0,TOP+RH,x,TOP+RH,busPin); out.push(`<circle cx="${x}" cy="${TOP+RH}" r="3" fill="var(--ink)"/>`);
       pOut=drawFrom(r.s,1,x,TOP+RH,busPin,`${i}|s|`);
     } else {
