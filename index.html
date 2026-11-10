@@ -211,7 +211,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
   <header class="top">
     <div class="brand">
       <h1>공유압 회로 시뮬레이터</h1>
-      <span class="sub">설비보전기사 실기 공개문제 — 진단·구성 16개 + 과정평가형(V1/V2) 12개 · 회로 구성부터 유지보수까지</span>
+      <span class="sub">설비보전기사 실기 공개문제 — 진단·구성 16개 + 과정평가형(V1/V2) 12개 + 기능사 16개 · 회로 구성부터 유지보수까지</span>
       <span class="sub maker">제작: 한국폴리텍대학 진주캠퍼스 자동화과 장성욱</span>
     </div>
     <div class="clock" title="실기 과제 1시간 모의 타이머">
@@ -228,6 +228,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     <div class="seg" id="setSeg">
       <button data-s="A" aria-pressed="true" title="진단 및 구성 공개문제 (실린더 2개, 8문제)">진단·구성</button>
       <button data-s="V" aria-pressed="false" title="과정평가형 V1/V2 공개문제 (실린더 3개 / 유압 6문제)">과정평가형</button>
+      <button data-s="G" aria-pressed="false" title="설비보전기능사 공개문제 (공기압 8 · 유압 8, 주어진 회로 그대로 구성)">기능사</button>
     </div>
     <div class="seg" id="kindSeg">
       <button data-k="P" aria-pressed="true">공기압</button>
@@ -370,7 +371,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
 </div>
 <div id="origModal" class="omodal" hidden><div class="obox"><div class="ohead"><b id="origTitle">원본 회로도</b><span class="sub" style="margin-left:8px;color:var(--muted)">문제지 내용을 시뮬레이터가 다시 그린 그림</span><span class="spacer" style="flex:1"></span><button class="btn small primary" id="origClose">닫기</button></div>
   <div class="obody"><h3 id="origFluidH">가. 공기압 회로도</h3><div class="owrap"><svg id="origFluid" viewBox="0 0 1000 680"></svg></div>
-  <h3>나. 전기회로도 (문제지 원본 — 오류 포함)</h3><div class="owrap"><svg id="origLad"></svg></div>
+  <h3 id="origLadH">나. 전기회로도 (문제지 원본 — 오류 포함)</h3><div class="owrap"><svg id="origLad"></svg></div>
   <h3>다. 변위단계선도</h3><div class="owrap"><svg id="origStep"></svg></div></div></div></div>
 <div class="pop" id="pop" hidden></div>
 
@@ -512,7 +513,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     for (const k in this.p.sensors) {
       const [a, end] = this.p.sensors[k];
       const x = this.pos[a];
-      s[k] = end === 1 ? x >= 0.97 : x <= 0.03;
+      s[k] = end === 1 ? x >= 0.97 : end === 0 ? x <= 0.03 : Math.abs(x - end) <= 0.03;
     }
     if (this.p.ps) s.PS = this.psCnt >= PS_T && this.plumb.__psOK !== false; // ~250ms of holding pressure
     this.sens = s;
@@ -543,7 +544,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     // timers (on-delay 3 s)
     for (const k in coil) if (k[0] === "T") {
       const tm = this.timer[k] || (this.timer[k] = { acc: 0, done: false });
-      if (coil[k]) { tm.acc += DT; if (!tm.done) changed = true; if (!tm.done && tm.acc >= 3000) tm.done = true; }
+      if (coil[k]) { tm.acc += DT; if (!tm.done) changed = true; if (!tm.done && tm.acc >= (this.p.tset || 3000)) tm.done = true; }
       else { if (tm.acc) changed = true; tm.acc = 0; tm.done = false; }
     }
     // counters: C1 count coil, CR1 reset coil
@@ -638,6 +639,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     const res = { ok: true, cycles: [], msg: [] };
     m.run(1000);
     if (m.events.length) { res.ok = false; res.msg.push("전원 투입 직후 PB1을 누르지 않았는데 액추에이터가 움직였습니다: " + groupEvents(m.events).map(fmtGroup).join(" → ")); return res; }
+    if (problem.op === "cont") return gradeCont(problem, m, res);
     for (let c = 0; c < nCycles; c++) {
       m.events = [];
       m.press("PB1", 300);
@@ -655,7 +657,36 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
       res.cycles.push(cyc);
       if (!cyc.ok) { res.ok = false; break; }
     }
+    if (res.ok && problem.op === "estop") gradeES(problem, m, res);
     return res;
+  }
+  // 기능사: PB1 한 번 → 3사이클 연속 후 정지, PB2 카운터 초기화
+  function gradeCont(problem, m, res) {
+    const push = (label, ok, groups, why) => { res.cycles.push({ n: res.cycles.length + 1, label, ok, groups: groups || [], why }); if (!ok) res.ok = false; return ok; };
+    m.events = []; m.press("PB1", 300); let idle = m.runIdle(2500, 90000);
+    let g = groupEvents(m.events), r = matchFlat(g, problem.seq, 3);
+    if (!push("PB1 ON-OFF → 3사이클 연속 운전 후 정지", idle && r.ok && !r.extra.length && m.atRest(), g,
+      !idle ? "멈추지 않고 계속 반복합니다(카운터 b접점 확인)" : !g.length ? "PB1을 눌러도 아무 동작이 없습니다" : !r.ok ? `${r.done + 1}번째 사이클에서 순서가 다릅니다` : r.extra.length ? "3사이클 뒤에도 더 움직입니다" : "초기 위치로 돌아오지 않았습니다")) return res;
+    m.events = []; m.press("PB1", 300); m.runIdle(1500, 20000);
+    if (!push("카운트 완료 상태에서 PB1 → 움직이지 않음", m.events.length === 0, groupEvents(m.events), "카운터 초기화 전인데 다시 움직입니다")) return res;
+    m.press("PB2", 300); m.run(300);
+    if (!push("PB2 ON-OFF → 카운터 초기화", (m.cnt.C1 || 0) === 0, [], "카운터가 0으로 돌아가지 않습니다")) return res;
+    m.events = []; m.press("PB1", 300); idle = m.runIdle(2500, 90000);
+    g = groupEvents(m.events); r = matchFlat(g, problem.seq, 3);
+    push("초기화 후 PB1 → 다시 3사이클 운전", idle && r.ok && !r.extra.length, g, `${r.done}사이클 후 이상`);
+    return res;
+  }
+  // 기능사: ES1 유지형 비상정지 — ON 모든 실린더 후진, OFF 시스템 초기화
+  function gradeES(problem, m, res) {
+    const push = (label, ok, why) => { res.cycles.push({ n: res.cycles.length + 1, label, ok, groups: [], why }); if (!ok) res.ok = false; return ok; };
+    m.events = []; m.press("PB1", 300); m.run(1500);
+    m.inp.ES = 1; m.run(4000);
+    if (!push("동작 중 ES1 ON → 모든 실린더 후진", m.atRest(), "초기 위치로 돌아오지 않았습니다")) { m.inp.ES = 0; return; }
+    m.inp.ES = 0; m.events = []; m.run(2500);
+    if (!push("ES1 OFF → 시스템 초기화 (저절로 다시 움직이지 않음)", m.events.length === 0, "해제하자마자 다시 움직입니다")) return;
+    m.events = []; m.press("PB1", 300); m.runIdle(1500, 40000);
+    const g = groupEvents(m.events), ok = g.length === problem.seq.length && problem.seq.every((x, i) => sameGroup(x, g[i]));
+    push("초기화 후 PB1 → 정상 1사이클", ok, ok ? "" : "재동작 순서가 다릅니다: " + g.map(fmtGroup).join(" → "));
   }
 
   // ---------- maintenance tests ----------
@@ -945,12 +976,70 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
     maint: ["실린더 A 방향제어밸브를 4포트 3위치 A-B-T 접속형으로 교체하고 파일럿 체크밸브로 로킹 회로 구성", "유압모터 B 회전속도 meter-in 조정", "파워유닛 토출구에 체크밸브 추가 (역류 방지)"],
     mkind: ["lockA", "meterin", "check"] });
 
+  // ================= 설비보전기능사 공개문제 (주어진 회로 그대로 구성) =================
+  const GPN = [], GHY = [];
+  const L4 = { LS1: ["A", 0], LS2: ["A", 1], LS3: ["B", 0], LS4: ["B", 1] };
+  const gp = (no, o) => GPN.push(Object.assign({ no, maint: [], mkind: [] }, o));
+  const gh = (no, o) => GHY.push(Object.assign({ no, maint: [], mkind: [] }, o));
+  gp(1, { act: [cyl("A", single("Y1")), cyl("B", single("Y2"))], sensors: L4, inline: { A: ["fcv:rod"], B: ["fcv:rod"] }, op: "cont",
+    seq: [["A+"], ["A-"], ["B+"], ["B-"]],
+    rungs: ["(PB1 | K1) /C1 = K1", "(K1 LS3 | K2) /K5 = K2", "(LS2 | K3) K2 = K3", "(LS1 | K4) K3 = K4", "LS4 K4 = K5", "K2 /K3 = Y1", "K4 = Y2", "K3 = C1", "PB2 = CR1"] });
+  gp(2, { act: [cyl("A", single("Y1")), cyl("B", single("Y2"))], sensors: { LS1: ["A", 0], LS2: ["A", 1], S1: ["B", 0], S2: ["B", 1] }, inline: { A: ["fcv:cap"], B: ["fcv:cap"] }, op: "single", tset: 2000,
+    seq: [["A+"], ["B+"], ["B-"], ["A-"]],
+    rungs: ["(PB1 LS1 | K1) /K4 = K1", "LS2 = T1", "(T1 | K2) K1 = K2", "(S2 | K3) K2 = K3", "S1 K3 = K4", "K1 = Y1", "K2 /K3 = Y2"] });
+  gp(3, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", single("Y3"))], sensors: L4, inline: { B: ["fcv:rod", "red"] }, op: "estop", tset: 2000,
+    seq: [["A+"], ["B+"], ["A-"], ["B-"]],
+    rungs: [["ES", ["", "K1"], ["K1", "Y2"]], "/ES (PB1 LS3 | K2) /K5 = K2", "/ES (LS2 | K3) K2 = K3", "/ES (LS4 | K4) K3 = K4", "/ES LS1 = T1", "/ES T1 K4 = K5", ["/ES K2", ["/K4", "Y1"], ["K4 /K1", "Y2"]], "/ES K3 = Y3"] });
+  gp(4, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", single("Y3"))], sensors: L4, inline: { A: ["fcv:rod"], B: ["qev:cap"] }, op: "cont",
+    seq: [["A+"], ["A-"], ["B+"], ["B-"]],
+    rungs: ["(PB1 | K1) /C1 = K1", "(K1 LS3 | K2) /K5 = K2", "(LS2 | K3) K2 = K3", "(LS1 | K4) K3 = K4", "LS4 K4 = K5", "K2 /K3 = Y1", "K3 = Y2", "K4 = Y3", "K3 = C1", "PB2 = CR1"] });
+  gp(5, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", single("Y3"))], sensors: { S1: ["A", 0], S2: ["A", 1], LS1: ["B", 0], LS2: ["B", 1] }, inline: { A: ["qev:cap"], B: ["fcv:rod"] }, op: "single", tset: 2000,
+    seq: [["A+"], ["A-"], ["B+"], ["B-"]],
+    rungs: ["(PB1 LS1 | K1) /K4 = K1", "S2 = T1", "(T1 | K2) K1 = K2", "(S1 | K3) K2 = K3", "LS2 K3 = K4", ["K1", ["/K2", "Y1"], ["K2", "Y2"]], "K3 = Y3"] });
+  gp(6, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", single("Y3"))], sensors: { LS1: ["A", 0], S1: ["A", 1], S2: ["B", 0], LS2: ["B", 1] }, inline: { A: ["fcv:rod"], B: ["red"] }, op: "single", tset: 2000,
+    seq: [["A+"], ["A-"], ["B+"], ["B-"]],
+    rungs: ["(PB1 S2 | K1) /K2 = K1", "(S1 K1 | K2) /K3 = K2", "LS2 K2 = T1", "T1 = K3", "K1 = Y1", ["K2", ["", "Y2"], ["LS1", "Y3"]]] });
+  gp(7, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", dbl("Y4", "Y3"), 1)], sensors: L4, inline: { A: ["qev:cap"], B: ["fcv:cap"] }, op: "cont",
+    seq: [["A+"], ["B-"], ["B+"], ["A-"]],
+    rungs: ["(PB1 | K1) /C1 = K1", "(K1 | K2) /K3 = K2", "K2 LS3 | K3 /LS1 = K3", ["K2", ["", "Y1"], ["LS2", "Y3"]], ["K3", ["", "Y4"], ["LS4", "Y2"]], "K3 LS4 = C1", "PB2 = CR1"] });
+  gp(8, { act: [cyl("A", dbl("Y1", "Y2")), cyl("B", dbl("Y3", "Y4"))], sensors: L4, inline: { A: ["fcv:rod"], B: ["fcv:cap"] }, op: "estop",
+    seq: [["A+"], ["B+"], ["B-"], ["A-"]],
+    rungs: [["ES", ["", "K1"], ["K1", "Y4"], ["K1", "Y2"]], "/ES (PB1 LS1 | K2) /LS4 = K2", "/ES K2 LS2 = K3", ["/ES K2", ["", "Y1"], ["K3", "Y3"]], ["/ES /K2", ["LS3 /K1", "K4"], ["", "Y4"], ["K4", "Y2"]]] });
+
+  const A2 = { LS1: ["A", 0], LS2: ["A", 1] }, A3 = { LS1: ["A", 0], LS2: ["A", 0.5], LS3: ["A", 1] };
+  const AA = [["A+"], ["A-"]];
+  gh(1, { act: [cyl("A", ctr("Y1", "Y2"))], sensors: A3, op: "single", seq: AA, hplan: 1, adesc: "A: 4/3(Y1 전진 / Y2 후진) · Y3 상시열림 2/2(ON → 유량조절로 감속)",
+    rungs: ["(PB1 K4 | K1) /K3 = K1", "(LS2 | K2) K1 = K2", "LS3 K2 | K3 /K4 = K3", "LS1 = K4", "K1 /K3 = Y1", "K2 /K3 = Y3", "K3 = Y2"],
+    req: ["B부분 카운터밸런스 밸브 3±0.5 MPa", "A 전진 중 LS2 감지 → Y3가 바이패스(상시열림 2/2)를 막아 유량조절밸브로만 흐름 → 속도 약 50%"] });
+  gh(2, { act: [cyl("A", ctr("Y2", "Y1"))], sensors: A2, op: "single", seq: AA, hplan: 2, adesc: "A: 4/2 편솔(Y1 ON 후진) · Y2 3/2 → 파일럿 체크 열림(전진)",
+    rungs: ["(PB1 | K1) /K2 = K1", "(LS2 | K2) /K3 = K2", "LS1 = K3", "K1 = Y2", "K2 = Y1"],
+    req: ["로드측: 일방향 유량조절밸브 + 파일럿 체크밸브(파일럿 = 3/2 밸브 Y2 출구)", "Y2 ON일 때만 체크가 열려 전진 · Y1 ON → 후진", "유량조절밸브 속도 약 50%"] });
+  gh(3, { act: [cyl("A", ctr("Y1", "Y2"))], sensors: A3, op: "single", seq: AA, hplan: 3, adesc: "A: 4/3(Y1 전진 / Y2 후진) · Y3 상시열림 2/2(ON → 배압)",
+    rungs: ["(PB1 | K1) /K4 = K1", "(LS2 | K2) K1 = K2", "(LS3 | K3) K2 = K3", "(LS1 | K4) K3 = K4", "K1 /K3 = Y1", "K3 = Y2", "K2 /K3 = Y3"],
+    req: ["헤드측 양방향 유량조절밸브", "로드측: 압력제어밸브(3±0.5 MPa) ∥ 상시열림 2/2 밸브 Y3", "A 전진 중 LS2 감지 → Y3 닫힘 → 배압"] });
+  gh(4, { act: [cyl("A", ctr("Y1", "Y2"))], sensors: A2, op: "single", seq: AA, hplan: 4, adesc: "A: 4/2 편솔(Y1 ON 전진) · Y2 3/2 → 파일럿 체크 열림(후진)",
+    rungs: ["(PB1 | K1) /K2 = K1", "(LS2 | K2) /K3 = K2", "LS1 = K3", "K1 /K2 = Y1", "K2 = Y2"],
+    req: ["헤드측 파일럿 체크밸브(파일럿 = 3/2 밸브 Y2 출구), 로드측 일방향 유량조절밸브", "Y1 ON 전진 · Y1 OFF + Y2 ON 후진", "유량조절밸브 속도 약 50%"] });
+  gh(5, { act: [cyl("A", ctr("Y1", "Y2"))], sensors: A2, op: "single", seq: AA, hplan: 5, adesc: "A: 4/3(Y1 전진 / Y2 후진) · Y3 3/2(OFF 차동회로, ON 후진)",
+    rungs: ["(PB1 K2 | K1) /K3 = K1", "LS1 = K2", "(LS2 | K3) /K2 = K3", "K3 = K4", "K1 = Y1", "K3 = Y2", "K4 = Y3"],
+    req: ["헤드측 일방향 유량조절밸브", "로드측 3/2 밸브 Y3: OFF → 로드측이 헤드측과 연결(차동·재생), ON → 방향제어밸브 B와 연결(후진)", "유량조절밸브 속도 약 50%"] });
+  gh(6, { act: [cyl("A", single("Y1"))], sensors: A2, op: "single", seq: AA, hplan: 6, adesc: "A: 4/2 편솔(Y1 ON 전진) · Y2 2/2(후진 때 헤드측 → 유량조절 → 탱크)",
+    rungs: ["(PB1 K3 | K1) /K2 = K1", "(LS2 | K2) /K3 = K2", "LS1 = K3", "K1 = Y1", "K2 = Y2"],
+    req: ["로드측 일방향 유량조절밸브", "헤드측 분기 → 2/2 밸브 Y2 → 유량조절밸브 → 탱크 (후진 때 열림)", "유량조절밸브 속도 약 50%"] });
+  gh(7, { act: [cyl("A", single("Y1"))], sensors: A2, op: "single", seq: AA, hplan: 7, adesc: "A: 4/2 편솔(Y1 ON 전진) · Y2 2/2 → 릴리프 3 MPa(후진 압력)",
+    rungs: ["(PB1 K3 | K1) /K2 = K1", "(LS2 | K2) /K3 = K2", "LS1 /K1 = K3", "K1 = Y1", "K2 = Y2"],
+    req: ["헤드측 분기 → 유량조절밸브 → 탱크 (블리드오프), 로드측 일방향 유량조절밸브", "공급라인 → 2/2 밸브 Y2 → 압력계 + 릴리프밸브 3±0.5 MPa (후진 시 압력)", "유량조절밸브 속도 약 50%"] });
+  gh(8, { act: [cyl("A", single("Y1"))], sensors: { LS1: ["A", 0] }, ps: "A", op: "single", seq: AA, hplan: 8, adesc: "A: 4/2 편솔(Y1 ON 전진) · 압력스위치 PS → 후진",
+    rungs: ["(PB1 | K1) /K3 = K1", "(LS1 | K2) K1 /K3 = K2", "PS = K3", "K1 = Y1"],
+    req: ["공급라인 양방향 유량조절밸브(방향제어밸브 P 앞)", "헤드측 압력스위치 3±0.5 MPa + 압력계 — 전진 끝 압력 도달 → 후진", "유량조절밸브 속도 약 50%"] });
+
   PN.forEach((p) => (p.kind = "P")); HY.forEach((p) => (p.kind = "H"));
+  GPN.forEach((p) => { p.kind = "P"; p.set = "G"; p.fix = p.rungs; }); GHY.forEach((p) => { p.kind = "H"; p.set = "G"; p.fix = p.rungs; });
   HY[3].mplan = "v22";
   VPN.forEach((p) => { p.kind = "P"; p.set = "V"; }); VHY.forEach((p) => { p.kind = "H"; p.set = "V"; });
   [...VPN, ...VHY].forEach((p) => { if (!p.fix) p.fix = p.rungs; });
-  [...PN, ...HY, ...VPN, ...VHY].forEach((p) => (p.id = (p.set || "") + p.kind + p.no));
-  const api = { PN, HY, VPN, VHY };
+  [...PN, ...HY, ...VPN, ...VHY, ...GPN, ...GHY].forEach((p) => (p.id = (p.set || "") + p.kind + p.no));
+  const api = { PN, HY, VPN, VHY, GPN, GHY };
   if (typeof module !== "undefined") module.exports = api; else root.PROBLEMS = api;
 })(this);
 
@@ -1062,15 +1151,15 @@ function reducingText(p){
 
 // ---------- state ----------
 let kind=store.get("kind","P"), no=store.get("no",1), mode=store.get("mode","base"), pset=store.get("pset","A");
-const plist=()=>pset==="V"?(kind==="P"?P.VPN:P.VHY):(kind==="P"?P.PN:P.HY);
-const pname=(p)=>`${p.set==="V"?"과정평가형 ":""}${p.kind==="P"?"공기압":"유압"} ${p.no}번`;
+const plist=()=>pset==="V"?(kind==="P"?P.VPN:P.VHY):pset==="G"?(kind==="P"?P.GPN:P.GHY):(kind==="P"?P.PN:P.HY);
+const pname=(p)=>`${p.set==="V"?"과정평가형 ":p.set==="G"?"기능사 ":""}${p.kind==="P"?"공기압":"유압"} ${p.no}번`;
 let prob, baseL, fixL, curL, machine, showAns=false, simProb, ladVer=0;
 let rnd=null;            // random-fault practice {key, L, n}
 let mock=null;           // mock exam state
 const prog=store.get("prog",{});
 function markDone(what){ const k=probKey(); prog[k]=prog[k]||{}; if(!prog[k][what]){ prog[k][what]=true; store.set("prog",prog); renderChips(); } }
 const ladAll=store.get("lad2",{});
-const probKey=()=>prob?prob.id:(pset==="V"?"V":"")+kind+no;
+const probKey=()=>prob?prob.id:(pset==="A"?"":pset)+kind+no;
 window.APP={get prob(){return prob},get simProb(){return simProb},get curL(){return curL},get machine(){return machine},get fixL(){return fixL},get mode(){return mode},probKey,store,clone,setPlumb(pl,sp,sens){ if(mode==="build"){ machine.plumb=pl||{}; machine.speed=sp||{}; if(sens){ machine.p=Object.assign({},simProb,{sensors:sens}); machine.computeSensors(); } } }};
 
 function remapIds(base, fix){
@@ -1109,7 +1198,7 @@ $("mExample").onclick=()=>{ $("mText").value=lad2txt(exL); applyTxt($("mText").v
 // ---------- original circuit viewer (redrawn from the problem data) ----------
 function openOrig(){
   const maintCtx=mode==="maint"||(mode==="build"&&store.get("btarget","base")==="maint");
-  $("origTitle").textContent=`원본 회로도 — ${pname(prob)}`;
+  $("origTitle").textContent=`원본 회로도 — ${pname(prob)}`; $("origLadH").textContent=prob.set==="G"?"나. 전기회로도 (문제지 원본 — 오류 없음)":"나. 전기회로도 (문제지 원본 — 오류 포함)";
   $("origFluidH").textContent=`가. ${prob.kind==="P"?"공기압":"유압"} 회로도${maintCtx?" (유지보수 변경 반영)":""}`;
   try{ $("origFluid").setAttribute("viewBox",`0 0 ${window.BUILD.BW()} 680`); $("origFluid").innerHTML=window.BUILD.origFluidSVG(simProb, maintCtx?(window.BUILD.MT[probKey()]||{}):{}); }catch(e){ $("origFluid").innerHTML=`<text x="20" y="40">그릴 수 없습니다: ${e.message}</text>`; }
   const keep={curL,machine,mode,showAns,ladVer};
@@ -1122,6 +1211,10 @@ $("origModal").addEventListener("click",e=>{ if(e.target.id==="origModal") $("or
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") $("origModal").hidden=true; });
 function load(){
   const pl=plist(); if(no>pl.length){ no=1; store.set("no",no); } prob=pl[no-1];
+  const isG=prob.set==="G"; document.querySelector('#modeSeg button[data-m=maint]').hidden=isG;
+  document.querySelectorAll('#hTarget button[data-t=maint], #wTarget button[data-t=maint]').forEach(b=>b.hidden=isG);
+  if(isG&&mode==="maint"){ mode="base"; store.set("mode",mode); renderChips(); }
+  if(isG&&store.get("btarget","base")==="maint") store.set("btarget","base");
   baseL=S.buildLadder(prob.rungs); fixL=remapIds(baseL,S.buildLadder(prob.fix));
   if(rnd&&rnd.key!==probKey()) rnd=null;
   if(rnd&&mode==="base") baseL=rnd.L;
@@ -1180,30 +1273,33 @@ function valveDesc(a){
 }
 
 function renderStatic(){
-  $("actDesc").textContent=simProb.act.map(valveDesc).join(" · ");
+  $("actDesc").textContent=prob.adesc||simProb.act.map(valveDesc).join(" · ");
   $("seqline").innerHTML=prob.seq.map((g,i)=>`<span class="st">${i+1}→${i+2===prob.seq.length+1?"1":i+2}  ${seqTxt(g)}</span>`).join('<span class="arr">→</span>');
   drawStepDia();
   const mk=(mode==="maint"||(mode==="build"&&store.get("btarget","base")==="maint"))?prob.mkind:[];
   const has=(k)=>mk.includes(k);
-  $("wPB2").hidden=!(has("counter")||has("estop")||has("contstop"));
+  const op=prob.op;
+  $("wPB2").hidden=!(has("counter")||has("estop")||has("contstop")||op==="cont");
+  $("bPB2").nextSibling.textContent=op==="cont"?"PB2 리셋":"PB2 연속";
   $("wPB3").hidden=!(has("counter")||has("contstop"));
   $("lPB3").textContent=has("counter")?"PB3 리셋":"PB3 정지";
-  $("wES").hidden=!has("estop"); $("wH1").hidden=!has("estop");
-  $("wC1").hidden=!has("counter"); $("wT1").hidden=!has("timer");
+  $("wES").hidden=!(has("estop")||op==="estop"); $("wH1").hidden=!has("estop");
+  $("wC1").hidden=!(has("counter")||op==="cont"); $("wT1").hidden=!(has("timer")||JSON.stringify(prob.rungs).includes("T1"));
   $("bES").setAttribute("aria-pressed","false");
   const base=mode==="base";
   ["editCount","bUndo","bAns","bLines","bGrade","bRnd"].forEach(id=>$(id).hidden=!(base||(id==="bGrade"&&mode==="maint")||(id==="bLines"&&mode==="maint"&&mEdit)));
+  if(prob.set==="G") $("bAns").hidden=true;
   $("bRnd").textContent=rnd?"원래 문제로":"랜덤 오류 문제"; $("bRnd").setAttribute("aria-pressed",!!rnd);
   $("ladTitle").textContent=base?"전기회로도 (문제지 원본에서 수정)":mode==="maint"?(mEdit?"유지보수 회로 (내가 고친 회로)":"유지보수 회로 예시"):(store.get("btarget","base")==="maint"?"유지보수 회로 예시 (배선 참고용)":"기본동작 정답 회로 (배선 참고용)");
-  $("ladHint").textContent=base?(rnd?`랜덤 오류 문제 · 오류 ${rnd.n}개 숨어 있음`:`${pname(prob)} · 릴레이 개수는 그대로 · Y 코일을 누르면 솔레노이드를 바꿀 수 있음`):mode==="maint"?"PB2·PB3·비상정지로 직접 확인해 보세요":"배관이 맞으면 PB1으로 순서대로 동작합니다";
-  $("bGrade").textContent=base?"채점하기 (PB1 2회)":"유지보수 자동 점검";
+  $("ladHint").textContent=base?(rnd?`랜덤 오류 문제 · 오류 ${rnd.n}개 숨어 있음`:(prob.set==="G"?`${pname(prob)} · 문제지 회로 그대로(오류 없음) — 스위치로 동작을 확인하세요`:`${pname(prob)} · 릴레이 개수는 그대로 · Y 코일을 누르면 솔레노이드를 바꿀 수 있음`)):mode==="maint"?"PB2·PB3·비상정지로 직접 확인해 보세요":"배관이 맞으면 PB1으로 순서대로 동작합니다";
+  $("bGrade").textContent=base?(prob.op==="cont"?"채점하기 (PB1·PB2)":prob.op==="estop"?"채점하기 (PB1·ES1)":"채점하기 (PB1 2회)"):"유지보수 자동 점검";
   $("ansBox").hidden=true; $("bAns").textContent="정정 예시 보기";
   renderSheet();
 }
 
 function renderSheet(){
   const p=prob, isP=p.kind==="P";
-  $("sheetSub").textContent=p.set==="V"?`과정평가형 ${isP?"제1과제 공기압 회로 구성":"제2과제 유압 회로 구성"} · ${p.no}번`:`${isP?"제1과제 공기압시스템":"제2과제 유압시스템"} 진단 및 구성 · ${p.no}번`;
+  $("sheetSub").textContent=p.set==="G"?`설비보전기능사 ${isP?"제1과제 공기압회로 구성":"제2과제 유압회로 구성"} · ${p.no}번`:p.set==="V"?`과정평가형 ${isP?"제1과제 공기압 회로 구성":"제2과제 유압 회로 구성"} · ${p.no}번`:`${isP?"제1과제 공기압시스템":"제2과제 유압시스템"} 진단 및 구성 · ${p.no}번`;
   const sensTxt=(()=>{ const g={}; Object.entries(p.sensors).forEach(([k,[a,e]])=>{ (g[a]=g[a]||[])[e]=k; }); return Object.entries(g).map(([a,[s0,s1]])=>`${p.act.find(x=>x.id===a).kind==="motor"?"모터":"실린더"} ${a}: ${s0}(후진 끝)·${s1}(전진 끝)`).join(" / ")+(Object.keys(p.sensors).some(k=>/^S\d/.test(k))?" · S는 정전용량형 3선식 센서":""); })();
   const req=isP?[
     "서비스 유닛 작업압력 0.5±0.05 MPa",
@@ -1221,6 +1317,10 @@ function renderSheet(){
     "릴레이 개수 증감 금지 (접점 추가용 릴레이 점프는 허용)",
     "평가: 전원 유지 상태에서 2회 이상 동일하게 정상 동작해야 인정"
   ];
+  if(p.set==="G"){ const opTxt=p.op==="cont"?"PB1 1회 ON-OFF → 변위단계선도대로 3사이클 운전 후 정지 · PB2 1회 ON-OFF → 카운터 초기화":p.op==="estop"?"PB1 1회 ON-OFF → 1사이클 · ES1(유지형) ON → 모든 실린더 후진, OFF → 시스템 초기화":"PB1 1회 ON-OFF → 변위단계선도대로 1사이클 단속 운전";
+    req.length=0; (isP?["서비스 유닛 작업압력 0.5±0.05 MPa",sensTxt,"회로도의 유량제어밸브는 속도 약 50%",...(JSON.stringify(p.inline||{}).includes("red")?["감압밸브 0.3±0.05 MPa"]:[])]:["회로 최고압력(릴리프) 4±0.2 MPa",...(p.req||[])]).forEach(x=>req.push(x));
+    req.push(opTxt,`타이머 설정 ${(p.tset||3000)/1000}초`.replace(/.*/,m=>JSON.stringify(p.rungs).includes("T1")?m:""),"주어진 회로도에는 오류가 없습니다 — 회로도·전기회로도 그대로 구성 (다른 부품 사용·누락·추가는 실격)","배선: + 적색, − 청색 또는 흑색 · 지정 없는 누름버튼은 자동복귀형","평가: 전원 유지 상태에서 2회 이상 동일하게 정상 동작해야 인정");
+    for(let i=req.length-1;i>=0;i--) if(!req[i]) req.splice(i,1); }
   let h=`<div class="mcard"><span class="k">요구사항 체크</span><span class="t">회로 구성·기본동작</span><ul class="req">${req.map(r=>`<li>${r}</li>`).join("")}</ul></div>`;
   p.maint.forEach((m,i)=>{
     const k=p.mkind[i], d=MK[k]; const txt=k==="reducing"?reducingText(p):k==="timer"&&p.tmr?`${p.tmr[0]} 전진 완료를 확인하는 접점(센서 또는 그 단계 릴레이)으로 타이머 T1(On-Delay, 3 s) 코일을 구동하고, ${p.tmr[1]}를 움직이던 조건 자리에 T1 a접점을 넣습니다. 같은 단계에서 함께 움직이는 실린더가 있으면 같이 늦춰야 변위단계선도가 유지됩니다.`:k==="counter"&&p.set==="V"?d.p+" PB1 단동작은 세지 않도록 카운터 코일 앞에 연속 릴레이 a접점을 직렬로 넣습니다.":d.p;
@@ -1606,7 +1706,7 @@ $("bGrade").onclick=()=>{
   if(mode==="base"){
     const r=S.gradeCycles(prob,curL,2), {c,s}=countChanges(); const h=[];
     if(r.msg.length) h.push(item(false,"전원 투입",r.msg[0]));
-    r.cycles.forEach(cy=>{ h.push(item(cy.ok,`${cy.n}회차 PB1 ON-OFF`, cy.ok?`실제: ${cy.groups.map(seqTxt).join(" → ")} · 초기 위치 복귀`:`${cy.why}<br>실제: ${cy.groups.length?cy.groups.map(seqTxt).join(" → "):"없음"}`)); });
+    r.cycles.forEach(cy=>{ h.push(item(cy.ok,cy.label||`${cy.n}회차 PB1 ON-OFF`, cy.ok?(cy.groups.length?`실제: ${cy.groups.map(seqTxt).join(" → ")} · 초기 위치 복귀`:"확인"):`${cy.why}<br>실제: ${cy.groups.length?cy.groups.map(seqTxt).join(" → "):"없음"}`)); });
     if(r.ok){ h.push(item(true,"합격 조건",`변위단계선도대로 2회 연속 동작 · 접점 변경 ${c}개, 선 위치 변경 ${s}곳 · 릴레이 개수 그대로`)); if(!rnd) markDone("base"); }
     res.innerHTML=h.join("");
   } else {
@@ -1679,23 +1779,25 @@ window.APP.load=load; window.APP.markDone=markDone;
 // ---------- mock exam ----------
 function mockRender(){
   const bar=$("mockBar"); document.body.classList.toggle("mock",!!mock); bar.hidden=!mock; if(!mock) return;
-  const name=`${mock.set==="V"?"과정평가형 ":""}${mock.kind==="P"?"제1과제 공기압":"제2과제 유압"} ${mock.no}번`;
+  const name=`${mock.set==="V"?"과정평가형 ":mock.set==="G"?"기능사 ":""}${mock.kind==="P"?"제1과제 공기압":"제2과제 유압"} ${mock.no}번`;
   const st=(r)=>r?(r.ok?`<span class="chip ok">합격</span>`:`<span class="chip bad">불합격</span>`):`<span class="chip">미평가</span>`;
   const list=(r)=>r?`<div class="res">${r.items.map(([ok,t,d])=>item(ok,t,d)).join("")}</div>`:"";
   bar.innerHTML=`<div class="card-h"><h2>모의시험 · ${name}</h2><span class="sub">평가 기회는 단계마다 한 번 · 모범 보기·정정 예시는 잠겨 있습니다</span></div>
     <ol class="mocksteps">
-      <li><b>회로 구성 + 기본동작</b> — 문제지 회로도의 오류를 찾아 고친 회로대로 배관·배선 ${st(mock.r1)} <button class="btn small primary" id="mEval1" ${mock.r1?"disabled":""}>기본동작 평가 요청</button></li>
-      <li><b>시스템 유지보수</b> — 아래 유지보수 계획대로 회로를 직접 바꿔 배관·배선 ${st(mock.r2)} <button class="btn small primary" id="mEval2" ${!mock.r1||mock.r2?"disabled":""}>유지보수 평가 요청</button></li>
+      <li><b>회로 구성 + 기본동작</b> — ${mock.set==="G"?"문제지 회로도 그대로 배관·배선":"문제지 회로도의 오류를 찾아 고친 회로대로 배관·배선"} ${st(mock.r1)} <button class="btn small primary" id="mEval1" ${mock.r1?"disabled":""}>기본동작 평가 요청</button></li>
+      ${mock.set==="G"?"":`<li><b>시스템 유지보수</b> — 아래 유지보수 계획대로 회로를 직접 바꿔 배관·배선 ${st(mock.r2)} <button class="btn small primary" id="mEval2" ${!mock.r1||mock.r2?"disabled":""}>유지보수 평가 요청</button></li>`}
     </ol>
     <div class="btool"><button class="btn small" id="mEnd">${mock.r2?"결과 닫기":"시험 종료"}</button><span class="small">${mock.r2?`최종: ${mock.r1.ok&&mock.r2.ok?"<b style=\"color:var(--ok)\">합격 수준</b>":"<b style=\"color:var(--bad)\">보완 필요</b>"} · 걸린 시간 ${Math.round((mock.end-mock.t0)/60000)}분`:""}${mock.r1&&!mock.r1.ok?" · 기본동작을 완성하지 못하면 실제 시험에서는 실격입니다":""}</span></div>
-    ${mock.r1?`<details class="mini" ${mock.r2?"":"open"}><summary>기본동작 평가 내역</summary>${list(mock.r1)}</details>`:""}${mock.r2?`<details class="mini" open><summary>유지보수 평가 내역</summary>${list(mock.r2)}</details>`:""}`;
+    ${mock.r1?`<details class="mini" ${mock.r2?"":"open"}><summary>기본동작 평가 내역</summary>${list(mock.r1)}</details>`:""}${mock.r2&&mock.set!=="G"?`<details class="mini" open><summary>유지보수 평가 내역</summary>${list(mock.r2)}</details>`:""}`;
   const e1=$("mEval1"), e2=$("mEval2");
-  if(e1) e1.onclick=()=>{ const r=window.BUILD.evaluate(); mock.r1={ok:r.every(x=>x[0]),items:r}; if(mock.r1.ok) markDone("build"); store.set("btarget","maint"); load(); mockRender(); };
+  if(e1) e1.onclick=()=>{ const r=window.BUILD.evaluate(); mock.r1={ok:r.every(x=>x[0]),items:r}; if(mock.r1.ok) markDone("build");
+    if(mock.set==="G"){ mock.r2={ok:mock.r1.ok,items:[]}; mock.end=Date.now(); clkRun=false; if(mock.r1.ok) markDone("mock"); mockRender(); return; }
+    store.set("btarget","maint"); load(); mockRender(); };
   if(e2) e2.onclick=()=>{ const r=window.BUILD.evaluate(); mock.r2={ok:r.every(x=>x[0]),items:r}; mock.end=Date.now(); clkRun=false; if(mock.r1.ok&&mock.r2.ok) markDone("mock"); mockRender(); };
   $("mEnd").onclick=()=>{ mock=null; window.APP.mock=false; store.set("btarget","base"); mockRender(); load(); };
 }
 $("bMock").onclick=()=>{
-  const all=pset==="V"?[...P.VPN,...P.VHY]:[...P.PN,...P.HY]; const p=all[Math.floor(Math.random()*all.length)];
+  const all=pset==="V"?[...P.VPN,...P.VHY]:pset==="G"?[...P.GPN,...P.GHY]:[...P.PN,...P.HY]; const p=all[Math.floor(Math.random()*all.length)];
   kind=p.kind; no=p.no; mode="build"; rnd=null;
   mock={kind,no,set:p.set||"A",t0:Date.now(),r1:null,r2:null}; window.APP.mock=true;
   ["base","maint"].forEach(t=>{ store.set("hose:"+p.id+":"+t+":mock",null); store.set("wire2:"+p.id+":"+t+":mock",[]); });
@@ -1727,6 +1829,8 @@ const T={
   v43:{n:"4/3 밸브 (클로즈드 센터)",w:170,h:100,ports:{A:[60,12],B:[110,12],P:[60,88],T:[110,88]},grp:"방향제어밸브",h_only:1,sol:2,pos:3},
   v43abt:{n:"4/3 밸브 (A·B·T 접속)",w:170,h:100,ports:{A:[60,12],B:[110,12],P:[60,88],T:[110,88]},grp:"방향제어밸브",h_only:1,sol:2,pos:3},
   v22:{n:"2/2 편솔 밸브",w:110,h:100,ports:{A:[55,12],P:[55,88]},grp:"방향제어밸브",h_only:1,sol:1},
+  v22o:{n:"2/2 편솔 밸브 (상시열림)",w:110,h:100,ports:{A:[55,12],P:[55,88]},grp:"방향제어밸브",h_only:1,sol:1},
+  v32:{n:"3/2 편솔 밸브",w:130,h:100,ports:{A:[70,12],P:[45,88],T:[95,88]},grp:"방향제어밸브",h_only:1,sol:1},
   pu:{n:"유압 파워유닛",w:190,h:130,ports:{P:[70,14],T:[120,14]},grp:"공급",h_only:1},
   su:{n:"서비스 유닛",w:120,h:120,ports:{OUT:[106,42]},grp:"공급",p_only:1,adj:{step:0.05,max:1.0}},
   relief:{n:"릴리프 밸브",w:96,h:90,ports:{P:[28,80],T:[68,80]},grp:"공급",h_only:1,adj:{step:0.1,max:7}},
@@ -1794,7 +1898,7 @@ function requiredParts(){
   if(H){ add("pu"); add("relief"); add("gauge"); add("distP"); add("distT"); } else { add("su"); add("distP"); }
   Object.keys(sp.sensors).forEach(s=>add(/^S\d/.test(s)?"sensS":"sensLS"));
   sp.act.forEach(a=>{ if(a.kind==="cyl"){ add("cyl"); add(reqValve(a)[0]); if(a.valve.type==="run_dir") add("v22"); } else { add("motor"); const m=motorPlan(a); if(m.kind==="rundir"){ add("v22"); add("v42s"); } else { add(m.vt[0]); add("check"); } } });
-  Object.values(sp.inline||{}).forEach(v=>add("fcv1",v.length));
+  Object.values(sp.inline||{}).forEach(v=>v.forEach(x=>add(/^fcv/.test(x)?"fcv1":x==="red"?"prv":"qev")));
   const m=mt();
   Object.entries(m).forEach(([k,ids])=>{ const n=ids.length;
     if(k==="meteroutF") add("fcv1",n);
@@ -1820,7 +1924,8 @@ function sensLabels(t){ return Object.keys(APP.simProb.sensors).filter(s=>t==="s
 function detectPoints(){ // candidate end points of cylinders: S-type on body, LS on rod tip
   const pts=[]; comps.filter(c=>c.t==="cyl"&&c.role).forEach(c=>{ const w=T.cyl.w;
     pts.push({role:c.role,end:0,kind:"S",x:c.x+24,y:c.y+34},{role:c.role,end:1,kind:"S",x:c.x+w-70,y:c.y+34},
-             {role:c.role,end:0,kind:"LS",x:c.x+w-11,y:c.y+34},{role:c.role,end:1,kind:"LS",x:c.x+w-11+110,y:c.y+34}); });
+             {role:c.role,end:0,kind:"LS",x:c.x+w-11,y:c.y+34},{role:c.role,end:1,kind:"LS",x:c.x+w-11+110,y:c.y+34});
+    if(Object.values((APP.simProb||{}).sensors||{}).some(v=>v[0]===c.role&&v[1]>0&&v[1]<1)) pts.push({role:c.role,end:0.5,kind:"LS",x:c.x+w-11+55,y:c.y+34}); });
   return pts;
 }
 function sensMap(){
@@ -1828,8 +1933,8 @@ function sensMap(){
   comps.filter(c=>isSens(c.t)&&c.lab).forEach(c=>{ if(map[c.lab]) return; const d=T[c.t]; const cx=c.x+d.w/2, cy=c.y+d.h; const kind=c.t==="sensS"?"S":"LS";
     let best=null, bd=1e9; pts.filter(p=>p.kind===kind).forEach(p=>{ const dist=Math.hypot(p.x-cx,(p.y-cy)*0.7); if(dist<bd){ bd=dist; best=p; } });
     c.dirBad=false;
-    if(best&&bd<75&&c.t==="sensLS"&&(c.dir==null||c.legacyDir)){ c.dir=best.end===1?"R":"L"; delete c.legacyDir; }
-    if(best&&bd<75&&c.t==="sensLS"&&(c.dir||"R")!==(best.end===1?"R":"L")){ c.dirBad=true; c.det=null; return; }
+    if(best&&bd<75&&c.t==="sensLS"&&(c.dir==null||c.legacyDir)){ c.dir=best.end>=0.5?"R":"L"; delete c.legacyDir; }
+    if(best&&bd<75&&c.t==="sensLS"&&(c.dir||"R")!==(best.end>=0.5?"R":"L")){ c.dirBad=true; c.det=null; return; }
     if(best&&bd<75) map[c.lab]=[best.role,best.end]; c.det=best&&bd<75?best:null; });
   return map;
 }
@@ -1837,6 +1942,7 @@ function sensMap(){
 // ---------- net analysis ----------
 const has0=(path,t,from)=>path&&path.some(e=>e.c.t===t&&(!from||e.from===from));
 function analyze(){
+  if(APP.prob&&APP.prob.hplan) return analyzeG();
   const items=[], plumb={}, speed={}; const sp=APP.simProb, H=isH(); vmap={}; physSpeed={}; vinit={};
   const par={}; const f=(k)=>{ if(par[k]===undefined) par[k]=k; while(par[k]!==k){ par[k]=par[par[k]]; k=par[k]; } return k; };
   const u=(a,b)=>{ par[f(a)]=f(b); };
@@ -1965,7 +2071,10 @@ function analyze(){
     Object.values(lines).forEach(l=>{ if(r!==null) return; if(l.rodNets&&l.rodNets.includes(n)&&l.rodPath.some(e=>e.c.t==="cbv")) r=l.rodPath.find(e=>e.c.t==="cbv").c.set; else if(l.capNets&&l.capNets.includes(n)) r=l.lp; });
     c.reading=r; });
   // ---- base circuit: one-way flow controls drawn on the problem sheet ----
-  Object.entries(sp.inline||{}).forEach(([id,v])=>{ const l=lines[id]; if(!l) return; v.forEach(x=>{ const rod=x==="fcv:rod", pth=rod?l.rodPath:l.capPath, okk=has0(pth,"fcv1","IN");
+  Object.entries(sp.inline||{}).forEach(([id,v])=>{ const l=lines[id]; if(!l) return; v.forEach(x=>{
+    if(x==="qev:cap"){ const q=has0(l.capPath,"qev","P"); items.push([q,`${id} 급속배기밸브`,q?"헤드측 포트 가까이 급속배기밸브(P = 밸브 쪽, A = 실린더 쪽) — 회로도대로":has0(l.capPath,"qev")?"급속배기밸브 방향이 반대입니다(P = 방향제어밸브 쪽)":"회로도처럼 헤드측 라인에 급속배기밸브를 넣으세요"]); return; }
+    if(x==="red"){ const e=l.pP.find(z=>z.c.t==="prv"); items.push([!!e&&e.from==="IN",`${id} 감압밸브`,e?(e.from==="IN"?`${id} 방향제어밸브 P라인 앞 감압밸브 — 회로도대로`:"감압밸브 방향이 반대입니다(IN = 공급 쪽)"):`${id} 방향제어밸브 P라인 앞에 감압밸브를 넣으세요`]); if(e) items.push([okR(e.c.set,0.3,0.05),`감압밸브 설정 (${id})`,`현재 ${e.c.set.toFixed(2)} MPa — 요구 0.3±0.05 MPa`]); return; }
+    const rod=x==="fcv:rod", pth=rod?l.rodPath:l.capPath, okk=APP.prob.set==="G"?has0(pth,"fcv1"):has0(pth,"fcv1","IN");
     items.push([okk,`${id} ${rod?"로드측":"헤드측"} 일방향 유량조절밸브`,okk?`${rod?"전진":"후진"} 배기 교축(미터아웃) — 회로도대로`:has0(pth,"fcv1","OUT")?"체크밸브 방향이 반대입니다(밸브 쪽 IN, 실린더 쪽 OUT)":`회로도처럼 ${rod?"로드측":"헤드측"} 라인에 일방향 유량조절밸브를 넣으세요`]); }); });
   // ---- maintenance checks ----
   const m=mt(), has=(path,t,from)=>path&&path.some(e=>e.c.t===t&&(!from||e.from===from));
@@ -2001,11 +2110,14 @@ function analyze(){
     }); });
   if(H){ const open=[]; comps.forEach(c=>{ if(!used.has(c.id)||T[c.t].bus) return; Object.keys(T[c.t].ports).forEach(p=>{ if(!conn(c,p)&&!(c.t==="v42s"&&p==="B"&&APP.prob.id==="H1")) open.push(`${T[c.t].n} ${p}`); }); });
     if(open.length) items.push([false,"열린 포트",open.join(", ")+" — 유압이 걸리면 누유됩니다"]); }
-  const smap=sensMap(), want=APP.simProb.sensors, endTxt=(a,e)=>`${a} ${e?"전진 끝":"후진 끝"}`;
+  return sensorItems(items,{plumb,speed,items});
+}
+function sensorItems(items,ret){
+  const smap=sensMap(), want=APP.simProb.sensors, endTxt=(a,e)=>`${a} ${e===1?"전진 끝":e?"행정 중간":"후진 끝"}`;
   Object.keys(want).sort().forEach(s=>{ const got=smap[s], w=want[s]; const ok=got&&got[0]===w[0]&&got[1]===w[1];
     const dirBad=comps.some(c=>c.lab===s&&c.dirBad);
     items.push([!!ok,`센서 ${s}`,ok?`${endTxt(w[0],w[1])} 감지 위치 정상${/^LS/.test(s)?` · 롤러 방향 ${w[1]?"RIGHT(전진 쪽)":"LEFT(후진 쪽)"} 정상`:""}`:dirBad?`롤러 방향이 반대입니다 — ${w[1]?"전진 끝은 RIGHT":"후진 끝은 LEFT"} 방향으로 설치하세요 (리밋스위치는 방향성 고려)`:got?`${endTxt(got[0],got[1])}를 감지합니다 — ${endTxt(w[0],w[1])} 위치로 옮기세요`:comps.some(c=>isSens(c.t)&&c.lab===s)?`실린더 ${w[0]} ${w[1]?"전진 끝":"후진 끝"} 가까이에 놓으세요 (지금은 아무것도 감지 못함)`:`${s} 센서가 없습니다`]); });
-  return {plumb,speed,items,smap};
+  return Object.assign(ret,{smap});
 }
 
 // ---------- drawing ----------
@@ -2035,8 +2147,8 @@ function partArt(t,w,h,sym,c){
       o.push(`<g id="an${cid}" data-k="mot" data-cx="66" data-cy="42" transform="rotate(${ang(c)} 66 42)"><line x1="66" y1="42" x2="66" y2="24" stroke="#c22" stroke-width="2"/></g>`); }
     else if(/^v/.test(t)){
       const d=T[t], P3=d.pos===3, two=d.sol===2, bw=70, by=30, bh=40, ports=d.ports;
-      const rest=P3?(w/2-bw/2):(t==="v22"?ports.A[0]-28:(ports.A[0]+ports.B[0])/2-bw/2);
-      const BW=t==="v22"?56:bw, nB=P3?3:2, x0=rest-(P3?BW:BW);       // left edge of drawn boxes
+      const rest=P3?(w/2-bw/2):(/^v22/.test(t)?ports.A[0]-28:t==="v32"?ports.A[0]-35:(ports.A[0]+ports.B[0])/2-bw/2);
+      const BW=/^v22/.test(t)?56:bw, nB=P3?3:2, x0=rest-(P3?BW:BW);       // left edge of drawn boxes
       for(let i=0;i<nB;i++) o.push(`<rect x="${x0+i*BW}" y="${by}" width="${BW}" height="${bh}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`);
       const top=by, bot=by+bh, A=ports.A&&ports.A[0], B=ports.B&&ports.B[0];
       // which box sits under the ports: the rest box (spring side / centre)
@@ -2057,6 +2169,8 @@ function partArt(t,w,h,sym,c){
         const sl=off(0); arrowTo(Px+sl,bot,A+sl,top+1); arrowTo(B+sl,top,Tx+sl,bot-1);    // left: parallel (Y1)
         const sr=off(2); arrowTo(Px+sr,bot,B+sr,top+1); arrowTo(A+sr,top,Tx+sr,bot-1); }   // right: crossed (Y2)
       else if(t==="v22"){ const Px=ports.P[0]; tee(A,top,false); tee(Px,bot,true); const s=off(0); arrowTo(Px+s,bot,A+s,top+1); }
+      else if(t==="v22o"){ const Px=ports.P[0]; arrowTo(Px,bot,A,top+1); const s=off(0); tee(A+s,top,false); tee(Px+s,bot,true); }
+      else if(t==="v32"){ const Px=ports.P[0], Tx=ports.T[0]; arrowTo(A,top,Tx,bot-1); tee(Px,bot,true); const s=off(0); arrowTo(Px+s,bot,A+s,top+1); tee(Tx+s,bot,true); }
       // actuators
       const left=x0, right=x0+nB*BW;
       const solBox=(x,dir)=>{ const xs=dir<0?x-30:x; o.push(`<rect x="${xs}" y="${by+bh/2}" width="30" height="${bh/2}" stroke="${K}" stroke-width="1.4" fill="${F}"/>`); L(xs+(dir<0?8:22),bot-2,xs+(dir<0?22:8),by+bh/2+2);
@@ -2247,7 +2361,8 @@ function buildModel(sp,m){
   else { src=addComp("su",20,490); dP=addComp("distP",300,560); link(P(src,"OUT"),supKey()); }
   // chain helper: from key → list of [comp, inPort, outPort] → to key
   const chain=(from,items,to)=>{ let cur=from; items.forEach(([c,a,b2])=>{ link(cur,P(c,a)); cur=P(c,b2); }); link(cur,to); };
-  sp.act.forEach((a,i)=>{ const x0=n3?20+i*360:30+i*480; const inl=(sp.inline||{})[a.id]||[];
+  if(sp.hplan){ buildG(sp,{P,link,supKey,tankKey,chain}); }
+  else sp.act.forEach((a,i)=>{ const x0=n3?20+i*360:30+i*480; const inl=(sp.inline||{})[a.id]||[];
     if(a.kind==="cyl"){ const c=addComp("cyl",x0,90,a.id); const v=addComp(reqValve(a)[0],x0+80,330);
       const aT=a.valve.type==="single"&&a.valve.dir<0?"rod":"cap", bT=aT==="cap"?"rod":"cap";
       const vport={}; vport[aT]="A"; vport[bT]="B";
@@ -2257,7 +2372,7 @@ function buildModel(sp,m){
       if(on("meteroutF",a.id)||inl.includes("fcv:rod")) rodItems.push([put("fcv1",150,230),"IN","OUT"]);
       if(on("cb",a.id)){ const cb=put("cbv",190,240); const te=put("tee",170,165); const g=put("gauge",300,150); rodItems.push([cb,"OUT","IN"],[te,"1","2"]); link(P(te,"3"),P(g,"P")); }
       if(on("meterin",a.id)||on("meterin_cb",a.id)) capItems.push([put("fcv1",0,230),"OUT","IN"]);
-      if(on("qev",a.id)) capItems.push([put("qev",0,230),"P","A"]);
+      if(on("qev",a.id)||inl.includes("qev:cap")) capItems.push([put("qev",0,230),"P","A"]);
       if(on("meterin_cb",a.id)){ const cb=put("cbv",190,240); const te=put("tee",170,165); const g=put("gauge",300,150); rodItems.push([cb,"OUT","IN"],[te,"1","2"]); link(P(te,"3"),P(g,"P")); }
       let lockTee=null;
       if(on("lockA",a.id)||on("lockB",a.id)){ const pc=put("pcheck",190,240); rodItems.push([pc,"IN","OUT"]); lockTee=put("tee",0,165); capItems.push([lockTee,"1","2"]); link(P(lockTee,"3"),P(pc,"X")); }
@@ -2268,6 +2383,7 @@ function buildModel(sp,m){
       // supply line
       const pItems=[];
       if(on("biflow",a.id)) pItems.push([put("fcv2",160,440),"IN","OUT"]);
+      if(inl.includes("red")) pItems.push([put("prv",60,440),"IN","OUT"]);
       if(on("reducing",a.id)){ pItems.push([put("prv",60,440),"IN","OUT"]); if(H){ const te=put("tee",260,430); const g=put("gauge",380,420); pItems.push([te,"1","2"]); link(P(te,"3"),P(g,"P")); } }
       if(a.valve.type==="run_dir"){ const r=put("v22",250,330); chain(supKey(),pItems,P(r,"P")); link(P(r,"A"),P(v,"P")); }
       else chain(supKey(),pItems,P(v,"P"));
@@ -2282,9 +2398,79 @@ function buildModel(sp,m){
         if(on("meterin",a.id)){ const fc=addComp("fcv1",x0+250,320); link(P(r,"A"),P(fc,"OUT")); link(P(fc,"IN"),P(v,"P")); } else link(P(r,"A"),P(v,"P"));
         link(P(r,"P"),supKey()); link(P(v,"T"),tankKey()); } }
   });
-  Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; const sc2=addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); if(t==="sensLS") sc2.dir=end===1?"R":"L"; });
+  Object.entries(sp.sensors).forEach(([s,[role,end]])=>{ const t=/^S\d/.test(s)?"sensS":"sensLS"; const pts=detectPoints().filter(p=>p.role===role&&p.end===end&&p.kind===(t==="sensS"?"S":"LS")); if(!pts.length) return; const d=T[t]; const sc2=addComp(t,Math.round(pts[0].x-d.w/2),Math.round(pts[0].y-d.h-12),s); if(t==="sensLS") sc2.dir=end>=0.5?"R":"L"; });
   comps.forEach(c=>{ if(T[c.t].adj) c.set={su:0.5,relief:4.0,prv:H?(APP.prob.red||2.0):0.3,cbv:3.0,ps:3.0}[c.t]; });
   comps.forEach(c=>{ if(c.t==="relief"&&hoses.some(h=>(h.a===c.id+".P"||h.b===c.id+".P")&&[h.a,h.b].some(k=>{ const cc=comps.find(x=>x.id===+k.split(".")[0]); return cc&&cc.t==="tee"; }))) c.set=3.0; });
+}
+// 기능사 유압: 문제지 회로를 그대로 배치 (부품마다 솔레노이드 이름 ys)
+function buildG(sp,h){ const {P,link,supKey,tankKey,chain}=h, hp=sp.hplan, put=(t,x,y,ys)=>{ const c=addComp(t,x,y); if(ys) c.ys=ys; return c; };
+  const cy=addComp("cyl",330,80,"A");
+  const cap=P(cy,"cap"), rod=P(cy,"rod");
+  if(hp===1){ const v=put("v43",290,400,["Y1","Y2"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey());
+    const t1=put("tee",130,330), t2=put("tee",130,170), fc=put("fcv2",10,250), byp=put("v22o",170,240,["Y3"]), g1=put("gauge",20,60);
+    link(P(v,"A"),P(t1,"1")); link(P(t1,"3"),P(fc,"IN")); link(P(fc,"OUT"),P(t2,"3")); link(P(t1,"4"),P(byp,"P")); link(P(byp,"A"),P(t2,"4")); link(P(t2,"2"),cap); link(P(t2,"1"),P(g1,"P"));
+    const cb=put("cbv",560,280), t3=put("tee",560,170), g2=put("gauge",720,70); link(P(v,"B"),P(cb,"OUT")); link(P(cb,"IN"),P(t3,"1")); link(P(t3,"2"),rod); link(P(t3,"3"),P(g2,"P")); }
+  if(hp===2){ const v=put("v42s",290,400,["Y1"]), v3=put("v32",620,400,["Y2"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey()); link(supKey(),P(v3,"P")); link(P(v3,"T"),tankKey());
+    link(P(v,"B"),cap); const pc=put("pcheck",520,270), fc=put("fcv1",520,170); link(P(v,"A"),P(pc,"IN")); link(P(pc,"OUT"),P(fc,"IN")); link(P(fc,"OUT"),rod); link(P(v3,"A"),P(pc,"X")); }
+  if(hp===3){ const v=put("v43",290,400,["Y1","Y2"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey());
+    const fc=put("fcv2",200,230); link(P(v,"A"),P(fc,"IN")); link(P(fc,"OUT"),cap);
+    const t1=put("tee",560,330), t2=put("tee",560,170), rl=put("relief",520,235), byp=put("v22o",690,220,["Y3"]), g=put("gauge",720,70);
+    link(P(v,"B"),P(t1,"1")); link(P(t1,"3"),P(rl,"T")); link(P(rl,"P"),P(t2,"3")); link(P(t1,"2"),P(byp,"P")); link(P(byp,"A"),P(t2,"4")); link(P(t2,"1"),rod); link(P(t2,"2"),P(g,"P")); }
+  if(hp===4){ const v=put("v42s",290,400,["Y1"]), v3=put("v32",620,400,["Y2"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey()); link(supKey(),P(v3,"P")); link(P(v3,"T"),tankKey());
+    const pc=put("pcheck",200,230), fc=put("fcv1",520,230); link(P(v,"A"),P(pc,"IN")); link(P(pc,"OUT"),cap); link(P(v3,"A"),P(pc,"X")); link(P(v,"B"),P(fc,"IN")); link(P(fc,"OUT"),rod); }
+  if(hp===5){ const v=put("v43",290,400,["Y1","Y2"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey());
+    const t1=put("tee",180,300), fc=put("fcv1",200,170), v3=put("v32",560,240,["Y3"]); link(P(v,"A"),P(t1,"1")); link(P(t1,"2"),P(fc,"IN")); link(P(fc,"OUT"),cap);
+    link(P(v3,"A"),rod); link(P(v3,"P"),P(v,"B")); link(P(v3,"T"),P(t1,"3")); }
+  if(hp===6||hp===7){ const v=put("v42s",290,400,["Y1"]); link(supKey(),P(v,"P")); link(P(v,"T"),tankKey());
+    const t1=put("tee",180,260), fb=put("fcv2",20,330); link(P(v,"A"),P(t1,"1")); link(P(t1,"2"),cap);
+    if(hp===6){ const b2=put("v22",30,150,["Y2"]); link(P(t1,"3"),P(b2,"P")); link(P(b2,"A"),P(fb,"IN")); } else link(P(t1,"3"),P(fb,"IN"));
+    link(P(fb,"OUT"),tankKey()); const fc=put("fcv1",520,230); link(P(v,"B"),P(fc,"IN")); link(P(fc,"OUT"),rod);
+    if(hp===7){ const v2=put("v22",620,380,["Y2"]), t2=put("tee",640,240), r2=put("relief",780,200), g=put("gauge",780,60); link(supKey(),P(v2,"P")); link(P(v2,"A"),P(t2,"1")); link(P(t2,"2"),P(r2,"P")); link(P(r2,"T"),tankKey()); link(P(t2,"3"),P(g,"P")); } }
+  if(hp===8){ const v=put("v42s",290,400,["Y1"]), fs=put("fcv2",300,300+250-40); fs.y=470; fs.x=150; link(supKey(),P(fs,"IN")); link(P(fs,"OUT"),P(v,"P")); link(P(v,"T"),tankKey());
+    const t1=put("tee",180,260), ps=put("ps",20,180), g=put("gauge",60,60); link(P(v,"A"),P(t1,"1")); link(P(t1,"2"),cap); link(P(t1,"3"),P(ps,"P")); link(P(t1,"4"),P(g,"P")); link(P(v,"B"),rod); }
+}
+// 모범 배관(문제지 회로) — 비교 기준
+let refCache={key:null,v:null};
+function refModel(){ const k=APP.probKey(); if(refCache.key===k) return refCache.v;
+  const keep={comps,hoses,nextId,vmap,physSpeed,vinit,basePF,sel,fluidCache};
+  try{ quietBuild=true; buildModel(); refCache={key:k,v:{comps:comps,hoses:hoses}}; }
+  finally{ quietBuild=false; comps=keep.comps; hoses=keep.hoses; nextId=keep.nextId; vmap=keep.vmap; physSpeed=keep.physSpeed; vinit=keep.vinit; basePF=keep.basePF; sel=keep.sel; fluidCache=keep.fluidCache; }
+  return refCache.v; }
+// connection fingerprint of every part (iterative refinement over the hose graph)
+function wlLabels(cs,hs){
+  const par={}, f=(k)=>{ if(par[k]===undefined) par[k]=k; while(par[k]!==k){ par[k]=par[par[k]]; k=par[k]; } return k; };
+  cs.forEach(c=>{ const ps=Object.keys(T[c.t].ports); ps.forEach(p=>f(c.id+"."+p)); if(T[c.t].bus) ps.forEach(p=>par[f(c.id+"."+p)]=f(c.id+"."+ps[0])); });
+  hs.forEach(h=>{ par[f(h.a)]=f(h.b); });
+  const hsh=(str)=>{ let x=5381; for(let i=0;i<str.length;i++) x=((x*33)^str.charCodeAt(i))>>>0; return x.toString(36); };
+  let cl={}; cs.forEach(c=>cl[c.id]=c.t);
+  for(let r=0;r<4;r++){ const nl={};
+    cs.forEach(c=>Object.keys(T[c.t].ports).forEach(p=>{ const n=f(c.id+"."+p); (nl[n]=nl[n]||[]).push((T[c.t].bus?"*":p)+"@"+cl[c.id]); }));
+    const nh={}; Object.keys(nl).forEach(n=>nh[n]=hsh(nl[n].sort().join(",")));
+    const nc={}; cs.forEach(c=>{ const seen=new Set(); nc[c.id]=c.t+":"+hsh(Object.keys(T[c.t].ports).map(p=>{ const n=f(c.id+"."+p); if(T[c.t].bus){ if(seen.has(n)) return ""; seen.add(n); } return (T[c.t].bus?"*":p)+"="+nh[n]; }).filter(Boolean).sort().join(";")); });
+    cl=nc; }
+  return cl;
+}
+function analyzeG(){
+  const items=[], plumb={}, speed={}; vmap={}; physSpeed={}; vinit={};
+  const ref=refModel(), sp=APP.simProb;
+  const cnt=(cs)=>{ const r={}; cs.forEach(c=>r[c.t]=(r[c.t]||0)+1); return r; }, rq=cnt(ref.comps), hv=cnt(comps), miss=[], extra=[];
+  Object.keys(rq).forEach(t=>{ if((hv[t]||0)<rq[t]) miss.push(`${T[t].n} ${rq[t]-(hv[t]||0)}개`); });
+  Object.keys(hv).forEach(t=>{ if(hv[t]>(rq[t]||0)) extra.push(`${T[t].n} ${hv[t]-(rq[t]||0)}개`); });
+  items.push([!miss.length&&!extra.length,"부품 선정 (문제지 회로도)",(miss.length?"누락: "+miss.join(", "):"누락 없음")+" · "+(extra.length?"추가: "+extra.join(", ")+" (회로도와 다른 부품 추가/누락은 실격)":"추가 없음")]);
+  const lu=wlLabels(comps,hoses), lr=wlLabels(ref.comps,ref.hoses), pool={}; ref.comps.forEach(c=>(pool[lr[c.id]]=pool[lr[c.id]]||[]).push(c));
+  const match={}, bad=[]; comps.forEach(c=>{ const q=pool[lu[c.id]]; if(q&&q.length) match[c.id]=q.shift(); else if(Object.keys(T[c.t].ports).length) bad.push(c); });
+  // solenoid names: matched valves take the sheet's names; others are guessed by type so the ladder can still drive them
+  const left=ref.comps.filter(rc=>rc.ys&&!Object.values(match).includes(rc));
+  comps.forEach(c=>{ if(!/^v/.test(c.t)) return; let rc=match[c.id]; if(!rc||!rc.ys){ const i=left.findIndex(x=>x.t===c.t); if(i>=0) rc=left.splice(i,1)[0]; } if(rc&&rc.ys) vmap[c.id]=rc.ys; });
+  const okNet=!bad.length;
+  const nm=(c)=>T[c.t].n+(c.role?" "+c.role:"");
+  items.push([okNet,"배관 연결 (문제지 회로도와 비교)",okNet?"모든 부품의 포트 연결이 회로도와 같습니다":`회로도와 연결이 다른 부품: ${[...new Set(bad.map(nm))].join(", ")} — 포트(P·T·A·B·IN·OUT·X)와 연결 대상을 다시 확인하세요`]);
+  const rv=comps.find(c=>c.t==="relief"&&match[c.id]&&match[c.id].set>=3.9)||comps.find(c=>c.t==="relief");
+  const lp=rv?(rv.set??4):0; basePF=lp<1?0:Math.min(1,lp/3);
+  comps.forEach(c=>{ const rc=match[c.id]; if(!T[c.t].adj||!rc) return; const tol=c.t==="relief"&&rc.set>=3.9?0.2:0.5;
+    items.push([Math.abs(c.set-rc.set)<=tol+1e-9,`${T[c.t].n} 설정`,`현재 ${c.set.toFixed(1)} MPa — 요구 ${rc.set}±${tol} MPa`]); });
+  sp.act.forEach(a=>{ plumb[a.id]=okNet?"ok":"chk"; speed[a.id]={f:1,b:1}; physSpeed[a.id]={f:basePF,b:basePF,dyn:1}; });
+  return sensorItems(items,{plumb,speed,items});
 }
 $("bModel").onclick=()=>{ buildModel(); sel=null; saveHose(); APP.resetMachine(); renderBoard(); $("bCheck").onclick(); };
 // symbol drawing of the circuit as given on the problem sheet (redrawn, not a copy)
@@ -2364,19 +2550,21 @@ let physSpeed={}, basePF=1, fluidCache=null, vinit={};
 function fluidStatic(){
   if(fluidCache) return fluidCache; const H=isH(); const K=(c,p)=>c.id+"."+p;
   const und=[], dir=[], hosed=new Set(); hoses.forEach(h=>{ und.push([h.a,h.b]); hosed.add(h.a); hosed.add(h.b); });
-  const src=[], tank=[], valves=[], pchk=[], qevs=[];
+  const src=[], tank=[], valves=[], pchk=[], qevs=[], rdir=[], fdir=[];
   comps.forEach(c=>{ const d=T[c.t], ps=Object.keys(d.ports);
     if(d.bus) ps.slice(1).forEach(p=>und.push([K(c,ps[0]),K(c,p)]));
     if(c.t==="su") src.push(K(c,"OUT")); if(c.t==="pu"){ src.push(K(c,"P")); tank.push(K(c,"T")); }
     if(c.t==="fcv1"||c.t==="fcv2"||c.t==="prv"||c.t==="cbv") und.push([K(c,"IN"),K(c,"OUT")]);
     if(c.t==="qev"){ und.push([K(c,"P"),K(c,"A")]); qevs.push(c); }
     if(c.t==="check") dir.push([K(c,"IN"),K(c,"OUT")]);
+    if(c.t==="relief"&&H) rdir.push([K(c,"P"),K(c,"T")]);
+    if(c.t==="fcv1") fdir.push([K(c,"IN"),K(c,"OUT")]);
     if(c.t==="pcheck"){ dir.push([K(c,"IN"),K(c,"OUT")]); pchk.push(c); }
     if(/^v/.test(c.t)) valves.push(c);
     // pneumatic one-touch fittings: an empty port on a cylinder or a valve work port is open to air; hydraulic couplers self-seal
     if(!H&&(c.t==="cyl"||(/^v/.test(c.t)&&!ps.includes("T")))) ps.forEach(p=>{ if(p!=="P"&&!hosed.has(K(c,p))) und.push([K(c,p),"ATM:"+K(c,p)]); });
   });
-  fluidCache={und,dir,src,tank,valves,pchk,qevs,H}; return fluidCache;
+  fluidCache={und,dir,src,tank,valves,pchk,qevs,H,rdir,fdir}; return fluidCache;
 }
 function valvePos(m,c,eff){ const d=T[c.t]; const nm=(i)=>(vmap[c.id]&&vmap[c.id][i])||`X${c.id}c${i}`; m.vpos=m.vpos||{};
   const on0=!!eff[nm(0)], on1=d.sol===2&&!!eff[nm(1)];
@@ -2394,10 +2582,12 @@ function fluidEval(m,eff){
   const restrictedT=new Set(["fcv1","fcv2","prv","cbv","qev"]);
   const inl=new Set(); comps.forEach(c=>{ if(restrictedT.has(c.t)) Object.keys(T[c.t].ports).forEach(p=>inl.add(K(c,p))); });
   F.und.forEach(([a,b])=>{ if(b.startsWith("ATM")) ur(a,b); else if(inl.has(a)&&inl.has(b)&&a.split(".")[0]===b.split(".")[0]) ur(a,b); else uf(a,b); });
-  F.dir.forEach(([a,b])=>add(all,a,b));
+  F.dir.forEach(([a,b])=>add(all,a,b)); F.rdir.forEach(([a,b])=>add(all,a,b));
   F.tank.forEach(t=>uf(t,"TANK"));
   F.valves.forEach(c=>{ const p=valvePos(m,c,eff), hasT=!!T[c.t].ports.T, ex=hasT?K(c,"T"):"EXH";
     if(c.t==="v22"){ if(p===1) uf(K(c,"P"),K(c,"A")); return; }
+    if(c.t==="v22o"){ if(p===0) uf(K(c,"P"),K(c,"A")); return; }
+    if(c.t==="v32"){ if(p===1) uf(K(c,"P"),K(c,"A")); else uf(K(c,"A"),K(c,"T")); return; }
     if(p===1){ uf(K(c,"P"),K(c,"A")); uf(K(c,"B"),ex); }
     else if(p===-1||(p===0&&T[c.t].pos!==3)){ uf(K(c,"P"),K(c,"B")); uf(K(c,"A"),ex); }
     else if(c.t==="v43abt"){ uf(K(c,"A"),ex); uf(K(c,"B"),ex); } });
@@ -2411,11 +2601,18 @@ function fluidEval(m,eff){
   const rev=new Map(); all.forEach((bs,a)=>bs.forEach(b=>add(rev,b,a)));
   const D=reach(["TANK","EXH",...atm],rev);
   const st=(k)=>P.has(k)?"P":D.has(k)?"E":"B";
+  let dynF=null;
+  if(APP.prob&&APP.prob.hplan){ // speed follows the actual flow path: through a throttle / pressure valve = slower
+    const fd=new Map(); free.forEach((bs,a)=>bs.forEach(b=>{ if(!(sink.has(a)&&sink.has(b))) add(fd,a,b); })); F.dir.forEach(([a,b])=>add(fd,a,b)); F.fdir.forEach(([a,b])=>add(fd,a,b));
+    F.pchk.forEach(c=>{ if(P.has(K(c,"X"))) add(fd,K(c,"OUT"),K(c,"IN")); });
+    const fP=reach(F.src,fd,sink), rf=new Map(); fd.forEach((bs,a)=>bs.forEach(b=>add(rf,b,a))); const fE=reach(["TANK","EXH",...atm],rf);
+    dynF=(inK,outK)=>(fP.has(inK)?1:0.5)*(fE.has(outK)?1:0.5); }
   const out={};
   APP.simProb.act.forEach(a=>{ const ac=comps.find(c=>(c.t===(a.kind==="cyl"?"cyl":"motor"))&&c.role===a.id); if(!ac){ out[a.id]={d:0,fac:0}; return; }
     const ps=physSpeed[a.id]||{f:basePF,b:basePF};
     if(a.kind==="cyl"){ const c=st(K(ac,"cap")), r=st(K(ac,"rod"));
-      if(c==="P"&&r==="E") out[a.id]={d:1,fac:ps.f}; else if(c==="E"&&r==="P") out[a.id]={d:-1,fac:ps.b};
+      if(dynF&&c==="P"&&r==="E") out[a.id]={d:1,fac:basePF*dynF(K(ac,"cap"),K(ac,"rod"))}; else if(dynF&&c==="E"&&r==="P") out[a.id]={d:-1,fac:basePF*dynF(K(ac,"rod"),K(ac,"cap"))};
+      else if(c==="P"&&r==="E") out[a.id]={d:1,fac:ps.f}; else if(c==="E"&&r==="P") out[a.id]={d:-1,fac:ps.b};
       else if(c==="P"&&r==="P") out[a.id]={d:1,fac:0.35*ps.f}; else out[a.id]={d:0,fac:0}; }
     else { const x=st(K(ac,"M1")), y=st(K(ac,"M2")); out[a.id]={d:x==="P"&&y==="E"?1:y==="P"&&x==="E"?-1:0,fac:basePF}; } });
   return out;
@@ -2637,7 +2834,7 @@ function wireCheck(){
   const mo={netEval:ne,plumb:lastPlumb,speed:lastSpeed,fluid:fluidEval};
   if(store.get("btarget","base")==="maint"){ S.gradeMaint(sp,L,APP.prob.mkind,mo).filter(x=>x.name!=="LS4 제거, 압력스위치(PS)로 대체").forEach(x=>items.push([x.ok,x.name,x.detail])); }
   else { const r=S.gradeCycles(sp,L,2,mo); if(r.msg.length) items.push([false,"전원 투입",r.msg[0]]);
-    r.cycles.forEach(c=>items.push([c.ok,`${c.n}회차 PB1 ON-OFF`,c.ok?"실제: "+c.groups.map(APP.seqTxt).join(" → "):(c.why+(c.groups.length?"<br>실제: "+c.groups.map(APP.seqTxt).join(" → "):""))])); }
+    r.cycles.forEach(c=>items.push([c.ok,c.label||`${c.n}회차 PB1 ON-OFF`,c.ok?(c.groups.length?"실제: "+c.groups.map(APP.seqTxt).join(" → "):"확인"):(c.why+(c.groups.length?"<br>실제: "+c.groups.map(APP.seqTxt).join(" → "):""))])); }
   return items;
 }
 
