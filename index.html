@@ -2568,19 +2568,20 @@ const PJ=window.PHOTOJ, HOT=PJ.HOT;
 // compact layout: emergency-stop unit under the power unit, lamp unit under the counter unit
 (function relayout(){ if(HOT.uy) return; const U0=JSON.parse(JSON.stringify(HOT.units)), H=HOT.H;
   // 전원 모듈은 좁게, 릴레이 모듈은 크게. 아래 줄: 비상정지 | 배관 회로도 판 | 램프
-  const SC={DC:[0.6,1],RY1:[1.2,1.2],RY2:[1.2,1.2],RY3:[1.2,1.2]}, TF={}; HOT.uy={}; HOT.uh={}; HOT.src={};
+  // 전원 모듈만 좁게, 나머지 모듈은 모두 같은 크기(가로 MW × 세로 1.2H)
+  const MW=462, SY=1.2, SC={}; Object.entries(U0).forEach(([u,[a,b]])=>SC[u]=u==="DC"?[400/(b-a),SY]:[MW/(b-a),SY]); const TF={}; HOT.uy={}; HOT.uh={}; HOT.src={};
   let X=0; ["DC","SG1","SG2","RY1","RY2","RY3","TM","CT"].forEach(u=>{ const [a,b]=U0[u], [sx,sy]=SC[u]||[1,1]; TF[u]={a0:a,nx:X,ny:0,sx,sy}; HOT.units[u]=[X,X+(b-a)*sx]; HOT.uy[u]=0; HOT.uh[u]=H*sy; X+=(b-a)*sx; });
   const topH=Math.max(...Object.values(HOT.uh)), ROW2=topH+70;
-  TF.ES={a0:U0.ES[0],nx:0,ny:ROW2,sx:1,sy:1}; HOT.units.ES=[0,U0.ES[1]-U0.ES[0]];
-  const lw=U0.LP[1]-U0.LP[0]; TF.LP={a0:U0.LP[0],nx:X-lw,ny:ROW2,sx:1,sy:1}; HOT.units.LP=[X-lw,X];
-  ["ES","LP"].forEach(u=>{ HOT.uy[u]=ROW2; HOT.uh[u]=H; });
+  TF.ES={a0:U0.ES[0],nx:0,ny:ROW2,sx:SC.ES[0],sy:SY}; HOT.units.ES=[0,MW];
+  TF.LP={a0:U0.LP[0],nx:X-MW,ny:ROW2,sx:SC.LP[0],sy:SY}; HOT.units.LP=[X-MW,X];
+  ["ES","LP"].forEach(u=>{ HOT.uy[u]=ROW2; HOT.uh[u]=H*SY; });
   Object.keys(U0).forEach(u=>HOT.src[u]=U0[u]);
   const uOf=(x)=>{ let best=null, bd=1e9; for(const [u,[a,b]] of Object.entries(U0)){ const d=x<a?a-x:x>b?x-b:0; if(d<bd){ bd=d; best=u; } } return best; };
   const mv=(x,y)=>{ const t=TF[uOf(x)]; return [t.nx+(x-t.a0)*t.sx, t.ny+y*t.sy]; };
   Object.values(PJ.J).forEach(j=>{ const [x,y]=mv(j.x,j.y); j.x=x; j.y=y; });
   ["btn","lamps","ry"].forEach(k=>Object.keys(HOT[k]).forEach(n=>{ const v=HOT[k][n], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; }));
   ["tdisp","cdisp"].forEach(k=>{ const v=HOT[k], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; });
-  HOT.W=X; HOT.topH=topH; HOT.TH=ROW2+H; })();
+  HOT.W=X; HOT.topH=topH; HOT.TH=ROW2+H*SY; })();
 let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=HOT.units.ES[1]+40, HY=HOT.uy.ES+50, HWID=HOT.units.LP[0]-40-HX; let HS=1.9;
 const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b&&j.y>=HOT.uy[u]&&j.y<HOT.uy[u]+HOT.uh[u]) return u; return null; };
 function modLabels(){ const N={ES:["비상정지 모듈","#c2410c"],DC:["전원 모듈","#374151"],SG1:["스위치 모듈 1","#15803d"],SG2:["스위치 모듈 2","#15803d"],RY1:["릴레이 모듈 1","#1d4ed8"],RY2:["릴레이 모듈 2","#1d4ed8"],RY3:["릴레이 모듈 3","#1d4ed8"],TM:["타이머 모듈","#7c3aed"],CT:["카운터 모듈","#b45309"],LP:["램프 모듈","#be123c"]};
