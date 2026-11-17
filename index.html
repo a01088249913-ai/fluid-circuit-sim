@@ -1951,7 +1951,7 @@ const MT={P1:{meterout:["B"]},P2:{reducing:["B"]},P3:{qev:["B"]},P4:{meterout:["
   H6:{lockB:["B"],biflow:["A"]},H7:{lockA:["A"],check:["*"]},H8:{reducing:["B"],bleedoff:["A"]},
   VH1:{cb:["A"],check:["*"],meterout:["B"]},VH2:{surge:["A"],check:["*"],meteroutF:["B"]},VH3:{reducing:["A"],bleedoff:["A"],meteroutF:["B"]},
   VH4:{reducing:["A"],bleedoff:["B"],check:["*"]},VH5:{lockA:["A"],bleedoff:["A"],meteroutF:["B"]},VH6:{lockA:["A"],meterin:["B"],check:["*"]}};
-let BW=1000; function setBW(){ const sp=APP.simProb; BW=sp&&sp.act.length>2?1120:1000; const b=$("board"); if(b) b.setAttribute("viewBox",`0 0 ${BW} 680`); }
+let BW=1000; function setBW(){ const sp=APP.simProb; BW=sp&&sp.act.length>2?1120:1000; if(typeof HWID!=="undefined") HS=HWID/BW; const b=$("board"); if(b) b.setAttribute("viewBox",`0 0 ${BW} 680`); }
 const isMaint=()=>store.get("btarget","base")==="maint";
 const mt=()=>isMaint()?(MT[APP.probKey()]||{}):{};
 const lockOf=(id)=>{ const m=mt(); return (m.lockA||[]).includes(id)||(m.lockB||[]).includes(id); };
@@ -2566,22 +2566,28 @@ function saveWire(){ store.set(wKey(),wires); netCache=null; if(useWire&&APP.mac
 function loadWire(){ const w=store.get(wKey(),[]); wires=Array.isArray(w)?w.filter(x=>x&&x.a&&x.b):[]; netCache=null; }
 const PJ=window.PHOTOJ, HOT=PJ.HOT;
 // compact layout: emergency-stop unit under the power unit, lamp unit under the counter unit
-(function relayout(){ if(HOT.uy) return; const U0=JSON.parse(JSON.stringify(HOT.units)), H=HOT.H, ROW2=H+70, sh=-U0.DC[0];
-  const D={}; Object.keys(U0).forEach(u=>D[u]=[sh,0]); const ctA=U0.CT[0]+sh; D.ES=[0-U0.ES[0],ROW2]; D.LP=[ctA-U0.LP[0],ROW2];
+(function relayout(){ if(HOT.uy) return; const U0=JSON.parse(JSON.stringify(HOT.units)), H=HOT.H;
+  // 전원 모듈은 좁게, 릴레이 모듈은 크게. 아래 줄: 비상정지 | 배관 회로도 판 | 램프
+  const SC={DC:[0.6,1],RY1:[1.2,1.2],RY2:[1.2,1.2],RY3:[1.2,1.2]}, TF={}; HOT.uy={}; HOT.uh={}; HOT.src={};
+  let X=0; ["DC","SG1","SG2","RY1","RY2","RY3","TM","CT"].forEach(u=>{ const [a,b]=U0[u], [sx,sy]=SC[u]||[1,1]; TF[u]={a0:a,nx:X,ny:0,sx,sy}; HOT.units[u]=[X,X+(b-a)*sx]; HOT.uy[u]=0; HOT.uh[u]=H*sy; X+=(b-a)*sx; });
+  const topH=Math.max(...Object.values(HOT.uh)), ROW2=topH+70;
+  TF.ES={a0:U0.ES[0],nx:0,ny:ROW2,sx:1,sy:1}; HOT.units.ES=[0,U0.ES[1]-U0.ES[0]];
+  const lw=U0.LP[1]-U0.LP[0]; TF.LP={a0:U0.LP[0],nx:X-lw,ny:ROW2,sx:1,sy:1}; HOT.units.LP=[X-lw,X];
+  ["ES","LP"].forEach(u=>{ HOT.uy[u]=ROW2; HOT.uh[u]=H; });
+  Object.keys(U0).forEach(u=>HOT.src[u]=U0[u]);
   const uOf=(x)=>{ let best=null, bd=1e9; for(const [u,[a,b]] of Object.entries(U0)){ const d=x<a?a-x:x>b?x-b:0; if(d<bd){ bd=d; best=u; } } return best; };
-  const mv=(x,y)=>{ const d=D[uOf(x)]; return [x+d[0],y+d[1]]; };
+  const mv=(x,y)=>{ const t=TF[uOf(x)]; return [t.nx+(x-t.a0)*t.sx, t.ny+y*t.sy]; };
   Object.values(PJ.J).forEach(j=>{ const [x,y]=mv(j.x,j.y); j.x=x; j.y=y; });
   ["btn","lamps","ry"].forEach(k=>Object.keys(HOT[k]).forEach(n=>{ const v=HOT[k][n], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; }));
   ["tdisp","cdisp"].forEach(k=>{ const v=HOT[k], [x,y]=mv(v[0],v[1]); v[0]=x; v[1]=y; });
-  HOT.src={}; HOT.uy={}; Object.entries(U0).forEach(([u,[a,b]])=>{ HOT.src[u]=[a,b]; HOT.units[u]=[a+D[u][0],b+D[u][0]]; HOT.uy[u]=D[u][1]; });
-  HOT.W=Math.max(...Object.values(HOT.units).map(v=>v[1])); HOT.TH=ROW2+H; })();
-let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=560, HY=HOT.H+120, HS=1.9;
-const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b&&j.y>=HOT.uy[u]&&j.y<HOT.uy[u]+HOT.H) return u; return null; };
+  HOT.W=X; HOT.topH=topH; HOT.TH=ROW2+H; })();
+let JACK={}, SW=[], LOADS=[], SENS=[], GROUPS=[], LBL={}, FIELDC=[]; const HX=HOT.units.ES[1]+40, HY=HOT.uy.ES+50, HWID=HOT.units.LP[0]-40-HX; let HS=1.9;
+const unitOf=(id)=>{ const j=JACK[id]; if(!j) return null; if(j.field) return "FD"; for(const [u,[a,b]] of Object.entries(HOT.units)) if(j.x>=a&&j.x<b&&j.y>=HOT.uy[u]&&j.y<HOT.uy[u]+HOT.uh[u]) return u; return null; };
 function modLabels(){ const N={ES:["비상정지 모듈","#c2410c"],DC:["전원 모듈","#374151"],SG1:["스위치 모듈 1","#15803d"],SG2:["스위치 모듈 2","#15803d"],RY1:["릴레이 모듈 1","#1d4ed8"],RY2:["릴레이 모듈 2","#1d4ed8"],RY3:["릴레이 모듈 3","#1d4ed8"],TM:["타이머 모듈","#7c3aed"],CT:["카운터 모듈","#b45309"],LP:["램프 모듈","#be123c"]};
-  return `<g id="wmods" pointer-events="none">`+Object.entries(HOT.units).map(([u,[a,b]])=>{ const n=N[u]; if(!n) return ""; const cx=(a+b)/2, y=HOT.uy[u]+HOT.H+8, tw=Math.min(b-a-16,n[0].length*30+40);
+  return `<g id="wmods" pointer-events="none">`+Object.entries(HOT.units).map(([u,[a,b]])=>{ const n=N[u]; if(!n) return ""; const cx=(a+b)/2, y=HOT.uy[u]+HOT.uh[u]+8, tw=Math.min(b-a-16,n[0].length*30+40);
     return `<path d="M${a+6} ${y} v12 H${b-6} v-12" fill="none" stroke="${n[1]}" stroke-width="4"/><rect x="${cx-tw/2}" y="${y+18}" width="${tw}" height="44" rx="22" fill="${n[1]}"/><text x="${cx}" y="${y+50}" font-size="28" font-weight="700" text-anchor="middle" fill="#fff">${n[0]}</text>`; }).join("")+`</g>`; }
 function buildUnits(){
-  JACK={}; SW=[]; LOADS=[]; SENS=[]; GROUPS=[];
+  setBW(); JACK={}; SW=[]; LOADS=[]; SENS=[]; GROUPS=[];
   Object.entries(PJ.J).forEach(([id,j])=>JACK[id]={id,x:j.x,y:j.y,kind:j.k,lab:j.lab});
   const ids=Object.keys(JACK);
   const grp=(re)=>{ const g=ids.filter(i=>re.test(i)); if(g.length) GROUPS.push(g); };
@@ -2610,7 +2616,7 @@ function buildUnits(){
   setBW(); const W=Math.max(HOT.W,HX+BW*HS+20), Hh=Math.max(HOT.TH+70,HY+680*HS+20);
   const svg=$("wboard"); WB.W=W; WB.H=Hh; svg.removeAttribute("width"); svg.removeAttribute("height"); if(!vb) vbPreset("L"); else applyVB();
   netCache=null;
-  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/>${wArt==="photo"?`<g id="wimg"><defs><image id="pimgSrc" href="${window.PANELIMG}" x="0" y="0" width="4271" height="${HOT.H}" preserveAspectRatio="none"/></defs>${Object.entries(HOT.units).map(([u,[a,b]])=>{ const [sa]=HOT.src[u]; return `<svg x="${a}" y="${HOT.uy[u]}" width="${b-a}" height="${HOT.H}" viewBox="${sa} 0 ${b-a} ${HOT.H}"><use href="#pimgSrc"/></svg>`; }).join("")}</g>`:`<g id="wimg">${panelArt()}</g>`}<g id="whose"></g><g id="wdyn"></g>${modLabels()}`;
+  if(!$("wimg")) svg.innerHTML=`<rect x="0" y="0" width="${W}" height="${Hh}" fill="#e9edf1"/>${wArt==="photo"?`<g id="wimg"><defs><image id="pimgSrc" href="${window.PANELIMG}" x="0" y="0" width="4271" height="${HOT.H}" preserveAspectRatio="none"/></defs>${Object.entries(HOT.units).map(([u,[a,b]])=>{ const [sa,sb]=HOT.src[u]; return `<svg x="${a}" y="${HOT.uy[u]}" width="${b-a}" height="${HOT.uh[u]}" viewBox="${sa} 0 ${sb-sa} ${HOT.H}" preserveAspectRatio="none"><use href="#pimgSrc"/></svg>`; }).join("")}</g>`:`<g id="wimg">${panelArt()}</g>`}<g id="whose"></g><g id="wdyn"></g>${modLabels()}`;
 }
 
 // ---------- physical fluid model: the machine moves exactly as the hoses are connected ----------
@@ -2705,11 +2711,11 @@ function panelArt(){
   const J=PJ.J, U=HOT.units, o=[], H=HOT.H;
   const TITLE={ES:"EMERGENCY SWITCH UNIT",DC:"DC POWER SUPPLY",SG1:"SIGNAL INPUT SWITCH UNIT",SG2:"SIGNAL INPUT SWITCH UNIT",RY1:"RELAY UNIT",RY2:"RELAY UNIT",RY3:"RELAY UNIT",TM:"ON-DELAY TIMER UNIT",CT:"DIGITAL COUNTER UNIT",LP:"BUZZER & LAMP UNIT"};
   const MOD={SG1:"E3001",SG2:"E3001",RY1:"E3004",RY2:"E3004",RY3:"E3004",TM:"E3005",CT:"E3006",LP:"E3009"};
-  Object.entries(U).forEach(([u,[a,b]])=>{ const w=b-a, Y=HOT.uy[u];
+  Object.entries(U).forEach(([u,[a,b]])=>{ const w=b-a, Y=HOT.uy[u], H=HOT.uh[u];
     o.push(`<g transform="translate(0 ${Y})"><rect x="${a}" y="0" width="${w}" height="${H}" fill="#3a3f45"/>`);
     o.push(`<rect x="${a+5}" y="6" width="${w-10}" height="${H-12}" rx="10" fill="${u==="ES"?"#c9c3a6":"#eef0f2"}" stroke="#8b939b" stroke-width="3"/>`);
     [[a+20,22],[b-20,22],[a+20,H-22],[b-20,H-22]].forEach(([x,y])=>o.push(`<circle cx="${x}" cy="${y}" r="7" fill="#b9bfc5" stroke="#7d858d"/>`));
-    if(TITLE[u]) o.push(`<text x="${a+w/2}" y="${u==="ES"||u==="DC"?44:H-62}" font-size="${u==="DC"?30:20}" font-weight="700" text-anchor="middle" fill="#2b3036" font-family="Arial,sans-serif" letter-spacing="1">${TITLE[u]}</text>`);
+    if(TITLE[u]) o.push(`<text x="${a+w/2}" y="${u==="ES"||u==="DC"?44:H-62}" font-size="${u==="DC"?24:20}" font-weight="700" text-anchor="middle" fill="#2b3036" font-family="Arial,sans-serif" letter-spacing="1">${TITLE[u]}</text>`);
     if(MOD[u]) o.push(`<text x="${b-24}" y="${H-30}" font-size="18" text-anchor="end" fill="#444" font-family="Arial,sans-serif">sys ${MOD[u]}</text><text x="${a+30}" y="${H-30}" font-size="14" fill="#666" font-family="Arial,sans-serif">INPUT POWER : DC 24V</text>`); o.push("</g>"); });
   // printed bus lines (+ top / − bottom)
   const bus=(re,col)=>{ const g={}; Object.entries(J).forEach(([k,j])=>{ const m=k.match(re); if(m){ (g[m[1]]=g[m[1]]||[]).push(j); } }); Object.values(g).forEach(js=>{ js.sort((p,q)=>p.x-q.x); if(js.length>1) o.push(`<polyline points="${js.map(j=>j.x+","+j.y).join(" ")}" fill="none" stroke="${col}" stroke-width="3"/>`); }); };
@@ -2746,10 +2752,11 @@ function panelArt(){
   Object.entries(HOT.lamps).forEach(([k,[x,y]])=>{ const A=J[k+".A1"],B=J[k+".A2"]; if(A&&B) o.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#6b737b" stroke-width="2.5"/>`); o.push(`<circle cx="${x}" cy="${y}" r="30" fill="#9aa1a8"/><circle cx="${x}" cy="${y}" r="23" fill="${LC[k]}" stroke="#555" stroke-width="2"/><text x="${x-44}" y="${y+6}" font-size="16" font-weight="700" text-anchor="end" fill="#333" font-family="Arial,sans-serif">${k.replace("H","L")}</text>`); });
   { const A=J["BZ.A1"],B=J["BZ.A2"]; if(A&&B){ const cx=(A.x+B.x)/2-100; o.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#6b737b" stroke-width="2.5"/><circle cx="${cx}" cy="${A.y}" r="26" fill="#2b2f34"/>`); for(let i=-1;i<=1;i++) for(let j=-1;j<=1;j++) o.push(`<circle cx="${cx+i*9}" cy="${A.y+j*9}" r="3" fill="#888"/>`); o.push(`<text x="${cx}" y="${A.y-34}" font-size="14" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">BUZZER</text>`); } }
   // power supply face
-  { const [a,b]=U.DC; o.push(`<rect x="${a+40}" y="300" width="250" height="150" rx="8" fill="#d9dde1" stroke="#8b939b" stroke-width="2"/><text x="${a+165}" y="330" font-size="17" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">REALVIEW STATUS MONITOR</text><rect x="${a+70}" y="350" width="190" height="60" rx="4" fill="#20262c"/><text x="${a+165}" y="390" font-size="26" text-anchor="middle" fill="#7cf08d" font-family="monospace">24.0 V</text>`);
-    o.push(`<rect x="${a+40}" y="470" width="60" height="40" rx="5" fill="#c62828"/><text x="${a+70}" y="530" font-size="13" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">POWER</text>`);
-    for(let i=0;i<6;i++) for(let j=0;j<4;j++) o.push(`<path d="M${a+70+i*90} ${80+j*52} h22 M${a+81+i*90} ${69+j*52} v22" stroke="#555" stroke-width="5"/>`);
-    o.push(`<rect x="${a+470}" y="345" width="150" height="140" rx="8" fill="none" stroke="#8b939b" stroke-width="2"/><text x="${a+545}" y="340" font-size="15" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">DC OUTPUT</text>`); }
+  { const [a,b]=U.DC, w=b-a, js=["DC.P0","DC.P1","DC.N0","DC.N1"].map(k=>J[k]).filter(Boolean), ox=Math.min(...js.map(q=>q.x))-45, oy=Math.min(...js.map(q=>q.y))-50, ow=Math.max(...js.map(q=>q.x))-ox+45, oh=Math.max(...js.map(q=>q.y))-oy+40;
+    o.push(`<rect x="${a+24}" y="300" width="${Math.min(200,ox-a-40)}" height="130" rx="8" fill="#d9dde1" stroke="#8b939b" stroke-width="2"/><text x="${a+24+Math.min(200,ox-a-40)/2}" y="326" font-size="13" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">STATUS MONITOR</text><rect x="${a+40}" y="342" width="${Math.min(200,ox-a-40)-32}" height="54" rx="4" fill="#20262c"/><text x="${a+24+Math.min(200,ox-a-40)/2}" y="378" font-size="24" text-anchor="middle" fill="#7cf08d" font-family="monospace">24.0 V</text>`);
+    o.push(`<rect x="${a+24}" y="460" width="56" height="38" rx="5" fill="#c62828"/><text x="${a+52}" y="516" font-size="13" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">POWER</text>`);
+    const nc=Math.max(1,Math.floor((w-60)/80)); for(let i=0;i<nc;i++) for(let j=0;j<4;j++) o.push(`<path d="M${a+50+i*80} ${84+j*48} h20 M${a+60+i*80} ${74+j*48} v20" stroke="#555" stroke-width="5"/>`);
+    o.push(`<rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" rx="8" fill="none" stroke="#8b939b" stroke-width="2"/><text x="${ox+ow/2}" y="${oy-6}" font-size="14" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">DC OUTPUT</text>`); }
   // timer / counter faces
   { const [x,y,w,h]=HOT.tdisp; o.push(`<rect x="${x-8}" y="${y-8}" width="${w+16}" height="${h+16}" rx="6" fill="#2b2f34"/><text x="${x+w/2}" y="${y-16}" font-size="13" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">T1 ON-DELAY · 3s</text>`); for(let i=0;i<3;i++) o.push(`<circle cx="${x+30+i*70}" cy="${y+h+150}" r="16" fill="#2b2f34" stroke="#999" stroke-width="3"/>`); }
   { const [x,y,w,h]=HOT.cdisp; o.push(`<rect x="${x-8}" y="${y-8}" width="${w+16}" height="${h+16}" rx="6" fill="#2b2f34"/><text x="${x+w/2}" y="${y-16}" font-size="13" text-anchor="middle" fill="#333" font-family="Arial,sans-serif">C1 PRESET 3</text>`); }
@@ -2983,7 +2990,7 @@ function applyVB(){ if(!vb) return; const a=vbAspect(); vb.w=Math.max(300,Math.m
   vb.x=Math.max(-vb.w*0.3,Math.min(WB.W-vb.w*0.7,vb.x)); vb.y=Math.max(-h*0.3,Math.min(WB.H-h*0.7,vb.y));
   $("wboard").setAttribute("viewBox",`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${h.toFixed(1)}`); }
 function vbFit(x,y,w,h){ const a=vbAspect(); const ww=Math.max(w,h/a); vb={x:x+(w-ww)/2,y:ww*a>h?y-Math.min(40,(ww*a-h)/2):y+(h-ww*a)/2,w:ww,fresh:$("wboard").getBoundingClientRect().width===0}; applyVB(); }
-function vbPreset(k){ if(k==="all") vbFit(0,0,WB.W,WB.H); else if(k==="top") vbFit(0,0,HOT.W,HOT.TH); else if(k==="L") vbFit(0,0,HOT.W/2+60,HOT.H); else if(k==="R") vbFit(HOT.W/2-60,0,HOT.W/2+60,HOT.H); else if(k==="hose") vbFit(HX-10,HY-10,1000*HS+20,680*HS+20);
+function vbPreset(k){ if(k==="all") vbFit(0,0,WB.W,WB.H); else if(k==="top") vbFit(0,0,HOT.W,HOT.TH); else if(k==="L") vbFit(0,0,HOT.W/2+60,HOT.topH); else if(k==="R") vbFit(HOT.W/2-60,0,HOT.W/2+60,HOT.topH); else if(k==="hose") vbFit(HX-10,HY-10,BW*HS+20,680*HS+20);
   document.querySelectorAll("#wZoom button[data-v]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===k)); }
 function vbZoom(f,cx,cy){ if(!vb) return; const r=$("wboard").getBoundingClientRect(); const px=cx==null?0.5:(cx-r.left)/r.width, py=cy==null?0.5:(cy-r.top)/r.height; const h=vb.w*vbAspect();
   const sx=vb.x+px*vb.w, sy=vb.y+py*h; vb.w/=f; const nh=vb.w*vbAspect(); vb.x=sx-px*vb.w; vb.y=sy-py*nh; applyVB(); document.querySelectorAll("#wZoom button[data-v]").forEach(x=>x.setAttribute("aria-pressed","false")); }
