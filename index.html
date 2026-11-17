@@ -254,6 +254,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
       <div class="seg" id="hTarget"><button data-t="base" aria-pressed="true">기본 회로</button><button data-t="maint" aria-pressed="false">유지보수 회로</button></div>
     </div>
     <div id="ctrlSlot"></div>
+    <div class="note" id="fromBase" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
     <div id="tabHose">
       <div class="bwrap">
         <div class="palette" id="palette"></div>
@@ -283,7 +284,7 @@ body.mock #bModel,body.mock #wModel,body.mock #bAns,body.mock #hTarget,body.mock
           <button class="btn small" id="wModel">모범 배선 보기</button>
           <button class="btn small primary" id="wCheck">배선 채점</button>
         </div>
-        <details class="refbox" id="refBox" open><summary><b>정답 도면</b> <span class="small">초록 글씨 = 꽂을 단자 · 예) RY1-2 11·14 = 1번 릴레이 유닛의 RY2, 11번과 14번 단자</span></summary>
+        <details class="refbox" id="refBox" open><summary><b>정답 도면</b></summary>
           <div class="small" id="refNote" style="color:var(--edit)"></div><div class="ladwrap reflad"><svg id="ladRef"></svg></div></details>
         <div class="stat" id="wStat"></div>
         <div class="boardbox fit"><svg id="wboard"></svg></div><div class="small" style="margin-top:-4px;color:var(--muted)">빈 곳을 끌면 화면이 움직이고, 마우스 휠(태블릿은 두 손가락)로 확대·축소합니다.</div>
@@ -2956,7 +2957,7 @@ let annCache=null, annFor=null;
 $("refBox").addEventListener("toggle",()=>drawRef());
 function drawRef(){ if($("refBox").open===false) return;
   if(APP.mock){ if(store.get("btarget","base")==="maint"){ $("ladRef").innerHTML=""; $("refNote").innerHTML="모의시험: 유지보수 회로는 문제지 계획을 보고 직접 설계합니다 (아래 문제지 요약 참고)"; return; } $("refNote").textContent="모의시험: 문제지 회로도 그대로입니다 — 오류를 찾아 고친 회로대로 배선하세요"; APP.drawLadder("ladRef",null); return; }
-  $("refNote").textContent=""; if(annFor!==APP.curL){ annFor=APP.curL; annCache=compile(APP.curL).ann; } APP.drawLadder("ladRef",annCache); }
+  $("refNote").textContent=""; if(annFor!==APP.curL){ annFor=APP.curL; annCache=compile(APP.curL).ann; } APP.drawLadder("ladRef",null); }
 
 $("wboard").addEventListener("pointerdown",e=>{
   const b=e.target.closest(".wbtn"); const m=APP.machine;
@@ -3007,9 +3008,24 @@ function renderAlloc(){
 // ---------- tabs & lifecycle ----------
 $("btabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const t=b.dataset.t; document.querySelectorAll("#btabs button").forEach(x=>x.setAttribute("aria-selected",x.dataset.t===t)); $("tabHose").hidden=t!=="hose"; $("tabWire").hidden=t!=="wire"; store.set("btab",t); if(t==="wire"){ if(vb&&vb.fresh) vb=null; buildUnits(); APP.resetMachine(); wSig=""; requestAnimationFrame(wireTick); } else { hSig=""; requestAnimationFrame(hoseTick); } });
 
+// 유지보수 회로는 내가 만든 기본 회로(배관·배선)에서 이어서 시작
+const tKey=(pre,t)=>pre+APP.probKey()+":"+t+(APP.mock?":mock":"");
+function copyBase(){ const h=store.get(tKey("hose:","base"),null), w=store.get(tKey("wire2:","base"),[]);
+  store.set(tKey("hose:","maint"),h?JSON.parse(JSON.stringify(h)):null); store.set(tKey("wire2:","maint"),Array.isArray(w)?JSON.parse(JSON.stringify(w)):[]); return !!h; }
+function fromBaseInit(){ const box=$("fromBase"); if(!box) return; const maint=isMaint();
+  if(maint&&store.get(tKey("hose:","maint"),null)==null&&!(store.get(tKey("wire2:","maint"),[])||[]).length&&store.get(tKey("hose:","base"),null)) copyBase();
+  box.hidden=!maint; box.style.display=maint?"flex":"none"; if(!maint) return;
+  const hasBase=!!store.get(tKey("hose:","base"),null);
+  box.innerHTML=hasBase?`<span>유지보수 회로는 <b>내가 만든 기본 회로(배관·배선)</b>에서 이어서 작업합니다 — 바뀌는 부분만 고치세요.</span><button class="btn small" id="fbCopy">기본 회로 다시 가져오기</button><button class="btn small" id="fbClear">빈 판에서 시작</button>`
+    :`<span>기본 회로를 먼저 구성하면, 유지보수 회로는 그 배관·배선을 그대로 가져와 이어서 작업할 수 있습니다.</span><button class="btn small" id="fbClear">빈 판에서 시작</button>`;
+  const twice=(b,msg,fn)=>{ if(!b) return; const t0=b.textContent; b.onclick=()=>{ if(b.dataset.arm){ fn(); APP.load(); return; } b.dataset.arm=1; b.textContent=msg; b.classList.add("primary"); setTimeout(()=>{ if(b.isConnected){ delete b.dataset.arm; b.textContent=t0; b.classList.remove("primary"); } },3000); }; };
+  twice($("fbCopy"),"한 번 더 누르면 덮어씀",()=>copyBase());
+  twice($("fbClear"),"한 번 더 누르면 모두 지움",()=>{ store.set(tKey("hose:","maint"),{comps:[],hoses:[]}); store.set(tKey("wire2:","maint"),[]); });
+}
 window.BUILD={ origFluidSVG, MT, BW:()=>{ setBW(); return BW; }, symOf:(t)=>partArt(t,T[t].w,T[t].h,true,null), T,
   machineOpts(sp){ return {plumb:lastPlumb, speed:lastSpeed, sensors:lastSens, netEval:useWire?currentNetEval():null, fluid:fluidEval}; },
   load(){
+    fromBaseInit();
     loadHose(); sel=null; pend=null; renderPalette();
     document.querySelectorAll("#viewSeg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===view));
     document.querySelectorAll("#wArt button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===wArt));
